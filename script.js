@@ -106,8 +106,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const verseText = document.createElement('span');
             verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },`;
 
+            // Création du conteneur pour les boutons d'action
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'verse-actions';
+
             const copyBtn = document.createElement('button');
-            copyBtn.className = 'copy-btn';
+            copyBtn.className = 'copy-btn verse-action-btn';
             copyBtn.textContent = 'Copier';
             copyBtn.addEventListener('click', () => {
                 const text = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },`;
@@ -116,8 +120,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     .catch(err => console.error('Erreur de copie:', err));
             });
             
+            const resetBtn = document.createElement('button');
+            resetBtn.className = 'end-btn verse-action-btn';
+            resetBtn.textContent = 'Reset';
+            resetBtn.addEventListener('click', () => {
+                verses.splice(index, 1);
+                updateVerseList();
+                showNotification('Verset supprimé !');
+            });
+            
+            actionsDiv.appendChild(copyBtn);
+            actionsDiv.appendChild(resetBtn);
+            
             verseEntry.appendChild(verseText);
-            verseEntry.appendChild(copyBtn);
+            verseEntry.appendChild(actionsDiv);
             verseList.appendChild(verseEntry);
         });
     }
