@@ -1,5 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap');
+
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Geist', Tahoma, Geneva, Verdana, sans-serif;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -37,14 +39,14 @@ audio {
     width: 100%;
     margin-bottom: 20px;
     border-radius: 10px;
-    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
+    filter: drop-shadow(0 4px 15px rgba(0,0,0,0.1));
 }
 
 .timer {
     font-size: 3rem;
     text-align: center;
     margin: 25px 0;
-    font-family: 'Courier New', monospace;
+    font-family: 'Geist Mono', monospace;
     color: #0984e3;
     font-weight: bold;
     text-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -172,7 +174,7 @@ button:active {
     position: fixed;
     top: 20px;
     right: 20px;
-    background: linear-gradient(45deg, #00b894, #00a085);
+    background: linear-gradient(45deg, #00b875,rgb(0, 160, 80));
     color: white;
     padding: 15px 25px;
     border-radius: 25px;
