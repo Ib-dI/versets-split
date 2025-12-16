@@ -9,6 +9,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const audioFileInput = document.getElementById('audioFile');
     const clearAudioBtn = document.getElementById('clearAudio');
     const fileName = document.getElementById('fileName');
+    const fileMeta = document.getElementById('fileMeta');
+    const audioDropZone = document.getElementById('audioDropZone');
     const exportBtn = document.getElementById('exportBtn');
     const exportText = document.getElementById('exportText');
     const notification = document.getElementById('notification');
@@ -21,20 +23,51 @@ document.addEventListener('DOMContentLoaded', function() {
     let verses = [];
     let updateTimer;
     
-    // Charger un fichier audio
+    // Charger un fichier audio (clic ou changement input)
+    let lastFile = null;
     audioFileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            audioPlayer.src = url;
-            audioWrapper.style.display = 'block';
-            clearAudioBtn.classList.add('visible');
-            fileName.textContent = file.name;
-            verses = [];
-            updateVerseList();
-            showNotification('Audio chargé avec succès');
-        }
+        if (file) handleFile(file);
     });
+
+    // Drag & drop support
+    if (audioDropZone) {
+        ['dragenter','dragover'].forEach(evt => {
+            audioDropZone.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                audioDropZone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave','dragend','drop'].forEach(evt => {
+            audioDropZone.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (evt === 'drop') {
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                        audioFileInput.files = e.dataTransfer.files;
+                        handleFile(file);
+                    }
+                }
+                audioDropZone.classList.remove('dragover');
+            });
+        });
+    }
+
+    function handleFile(file) {
+        lastFile = file;
+        const url = URL.createObjectURL(file);
+        audioPlayer.src = url;
+        audioWrapper.style.display = 'block';
+        clearAudioBtn.classList.add('visible');
+        fileName.textContent = file.name;
+        fileMeta.textContent = `Taille: ${formatBytes(file.size)}`;
+        verses = [];
+        updateVerseList();
+        showNotification('Audio chargé avec succès');
+    }
     
     // Supprimer l'audio
     clearAudioBtn.addEventListener('click', function() {
@@ -43,6 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
         audioWrapper.style.display = 'none';
         clearAudioBtn.classList.remove('visible');
         fileName.textContent = 'Charger un fichier audio';
+        if (fileMeta) fileMeta.textContent = '';
         verses = [];
         updateVerseList();
         currentTimeDisplay.textContent = '0.00';
@@ -101,6 +135,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateTimeDisplay() {
         const currentTime = audioPlayer.currentTime;
         currentTimeDisplay.textContent = currentTime.toFixed(2);
+    }
+
+    // Afficher la durée une fois les métadonnées chargées
+    audioPlayer.addEventListener('loadedmetadata', function() {
+        if (fileMeta && audioPlayer.duration) {
+            const dur = audioPlayer.duration.toFixed(2);
+            fileMeta.textContent = `Durée: ${dur}s` + (lastFile ? ` • ${formatBytes(lastFile.size)}` : '');
+        }
+    });
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B','KB','MB','GB','TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
     
     // Marquer le début d'un verset
