@@ -340,12 +340,15 @@
         <div class="extra-occurrences-section" id="extraOccurrencesSection" style="display: none">
           <p class="extra-occurrences-label">
             Occurrences supplémentaires de ce mot (le cheikh le redit plus tard dans le même passage). Pour une
-            phrase répétée sur plusieurs mots : clique ici, navigue au mot suivant avec ▶, reclique — comme le
-            marquage principal, ça enchaîne automatiquement.
+            phrase répétée sur plusieurs mots : clique "+ Ajouter", puis "Mot suivant" à chaque mot de la phrase
+            (pas besoin de naviguer à la main), "Terminer ici" sur le dernier.
           </p>
           <p class="active-extra-warning" id="activeExtraWarning" style="display: none"></p>
           <div id="extraOccurrencesList" class="extra-occurrences-list" dir="ltr"></div>
-          <button type="button" class="seek-btn" id="toggleExtraOccurrenceBtn">+ Ajouter une occurrence ici</button>
+          <div class="extra-occurrence-actions">
+            <button type="button" class="seek-btn" id="toggleExtraOccurrenceBtn">+ Ajouter une occurrence ici</button>
+            <button type="button" class="next-verse-btn" id="advanceOccurrenceBtn" style="display: none">Mot suivant (enchaîner)</button>
+          </div>
         </div>
         <div class="word-marked-list" id="wordMarkedList" dir="ltr"></div>
       </div>

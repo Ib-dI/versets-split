@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
     const extraOccurrencesList = document.getElementById('extraOccurrencesList');
     const toggleExtraOccurrenceBtn = document.getElementById('toggleExtraOccurrenceBtn');
+    const advanceOccurrenceBtn = document.getElementById('advanceOccurrenceBtn');
     const activeExtraWarning = document.getElementById('activeExtraWarning');
     const wordMarkedList = document.getElementById('wordMarkedList');
     const prevWordBtn = document.getElementById('prevWordBtn');
@@ -575,6 +576,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         toggleExtraOccurrenceBtn.disabled = wordMarkingLocked;
 
+        // "Mot suivant" : ferme l'occurrence en cours ET avance directement
+        // au mot suivant en un seul clic, pour enchaîner une phrase répétée
+        // sans naviguer à la main avec ▶ entre chaque mot.
+        const total = getWordList(verse.id)?.length ?? 0;
+        const canAdvance =
+            activeExtraWordIndex === wordViewIndex && wordViewIndex + 1 < total;
+        advanceOccurrenceBtn.style.display = canAdvance ? '' : 'none';
+        advanceOccurrenceBtn.disabled = wordMarkingLocked;
+
         if (activeExtraWordIndex !== null && activeExtraWordIndex !== wordViewIndex) {
             const openStart = verse.words[activeExtraWordIndex][verse.words[activeExtraWordIndex].length - 1].start;
             activeExtraWarning.textContent = `⚠ Occurrence encore ouverte sur le mot ${activeExtraWordIndex + 1} depuis ${openStart.toFixed(2)}s — navigue jusque-là pour la terminer, ou clique ici pour l'y rattacher et l'enchaîner.`;
@@ -649,6 +659,32 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!shrunk) {
                 showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
             }
+        }
+
+        renderWordMode();
+        updateVerseList();
+    });
+
+    // Ferme l'occurrence ouverte sur le mot courant ET en ouvre une sur le
+    // mot suivant, au même instant — un seul clic pour enchaîner une
+    // phrase répétée, sans passer par les flèches ▶ entre chaque mot.
+    advanceOccurrenceBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
+        if (activeExtraWordIndex === null || activeExtraWordIndex !== wordViewIndex) return;
+        const verse = verses[wordModeVerseIndex];
+        const total = getWordList(verse.id)?.length ?? 0;
+        if (wordViewIndex + 1 >= total) return;
+
+        const time = audioPlayer.currentTime;
+        const current = verse.words[wordViewIndex];
+        current[current.length - 1].end = time;
+
+        wordViewIndex += 1;
+        verse.words[wordViewIndex].push({ start: time, end: null });
+        activeExtraWordIndex = wordViewIndex;
+        const shrunk = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
+        if (!shrunk) {
+            showNotification('Occurrence enchaînée sur le mot suivant');
         }
 
         renderWordMode();
