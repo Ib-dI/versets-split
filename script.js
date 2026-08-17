@@ -34,10 +34,52 @@ document.addEventListener('DOMContentLoaded', function() {
     const surahIdInput = document.getElementById('surahId');
     const surahWordsStatus = document.getElementById('surahWordsStatus');
     const existingTimingsList = document.getElementById('existingTimingsList');
+    const toggleVerseLockBtn = document.getElementById('toggleVerseLock');
+    const toggleWordLockBtn = document.getElementById('toggleWordLock');
 
     let verses = [];
     let updateTimer;
     let wordModeVerseIndex = null;
+
+    // Verrous anti-clic-réflexe : Début/Fin verset et Marquer ce mot sont
+    // des habitudes de clic — utiles quand on marque activement, gênants
+    // (et destructeurs) le reste du temps. Déverrouillés par défaut ;
+    // ouvrir le mode mots verrouille automatiquement les versets, le
+    // fermer les redéverrouille (voir openWordMode/closeWordMode).
+    let verseMarkingLocked = false;
+    let wordMarkingLocked = false;
+
+    function renderVerseLock() {
+        toggleVerseLockBtn.classList.toggle('locked', verseMarkingLocked);
+        toggleVerseLockBtn.classList.toggle('unlocked', !verseMarkingLocked);
+        startVerseBtn.disabled = verseMarkingLocked;
+        endVerseBtn.disabled = verseMarkingLocked;
+    }
+
+    function renderWordLock() {
+        toggleWordLockBtn.classList.toggle('locked', wordMarkingLocked);
+        toggleWordLockBtn.classList.toggle('unlocked', !wordMarkingLocked);
+        if (wordModeVerseIndex !== null) {
+            renderWordMode();
+        } else {
+            markWordBtn.disabled = wordMarkingLocked;
+        }
+    }
+
+    toggleVerseLockBtn.addEventListener('click', function() {
+        verseMarkingLocked = !verseMarkingLocked;
+        renderVerseLock();
+        showNotification(verseMarkingLocked ? 'Marquage de versets verrouillé' : 'Marquage de versets déverrouillé');
+    });
+
+    toggleWordLockBtn.addEventListener('click', function() {
+        wordMarkingLocked = !wordMarkingLocked;
+        renderWordLock();
+        showNotification(wordMarkingLocked ? 'Marquage de mots verrouillé' : 'Marquage de mots déverrouillé');
+    });
+
+    renderVerseLock();
+    renderWordLock();
 
     // Liste des mots (arabe) du verset `verseId` pour la sourate en cours,
     // ou undefined si les données ne sont pas disponibles pour ce verset.
@@ -406,12 +448,19 @@ document.addEventListener('DOMContentLoaded', function() {
         updateTimeDisplay();
         wordModeSection.style.display = 'block';
         wordModeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Verrouille Début/Fin verset pendant qu'on marque des mots — c'est
+        // précisément le moment où un clic par réflexe dessus abîmerait le
+        // verset en cours.
+        verseMarkingLocked = true;
+        renderVerseLock();
         renderWordMode();
     }
 
     function closeWordMode() {
         wordModeVerseIndex = null;
         wordModeSection.style.display = 'none';
+        verseMarkingLocked = false;
+        renderVerseLock();
     }
 
     function renderWordMode() {
@@ -426,7 +475,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             wordProgress.textContent = `Mot ${doneCount + 1} / ${wordList.length}`;
             wordCurrent.textContent = wordList[doneCount];
-            markWordBtn.disabled = false;
+            markWordBtn.disabled = wordMarkingLocked;
         }
 
         wordMarkedList.innerHTML = verse.words

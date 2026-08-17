@@ -234,6 +234,16 @@
             <label for="verseId">ID du verset:</label>
             <input type="number" id="verseId" value="1" min="1" step="1" />
           </div>
+          <button
+            type="button"
+            class="lock-toggle-btn"
+            id="toggleVerseLock"
+            title="Verrouiller/déverrouiller Début verset / Fin verset (évite les clics par réflexe)"
+          >
+            <svg class="lock-icon-locked" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <svg class="lock-icon-unlocked" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <span class="lock-toggle-label">Versets</span>
+          </button>
           <button class="start-btn" id="startVerse">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -300,6 +310,16 @@
         <div class="word-progress" id="wordProgress">Mot 1 / 1</div>
         <div class="word-current" id="wordCurrent" dir="rtl" lang="ar"></div>
         <div class="word-mode-actions">
+          <button
+            type="button"
+            class="lock-toggle-btn"
+            id="toggleWordLock"
+            title="Verrouiller/déverrouiller Marquer ce mot (évite les clics par réflexe)"
+          >
+            <svg class="lock-icon-locked" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <svg class="lock-icon-unlocked" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <span class="lock-toggle-label">Mots</span>
+          </button>
           <button class="start-btn" id="markWordBtn">Marquer ce mot</button>
           <button class="end-btn" id="undoWordBtn">Annuler dernier mot</button>
           <button class="clear-audio-btn" id="closeWordModeBtn">Fermer</button>

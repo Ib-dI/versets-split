@@ -459,6 +459,17 @@ button:active {
   transform: scale(0.98);
 }
 
+button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+}
+
+button:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 8px var(--shadow-color);
+}
+
 /* Verse Display */
 .verse-display {
   background: var(--card-bg-color);
@@ -689,6 +700,46 @@ textarea:focus {
 .seek-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Verrou anti-clic-réflexe (Début/Fin verset, Marquer ce mot) */
+.lock-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--card-bg-color);
+  border: 1.5px solid var(--border-color);
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
+.lock-toggle-btn:hover {
+  transform: none;
+  border-color: var(--text-secondary);
+}
+
+.lock-toggle-btn .lock-icon-unlocked {
+  display: none;
+}
+
+.lock-toggle-btn.unlocked {
+  color: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.lock-toggle-btn.unlocked .lock-icon-locked {
+  display: none;
+}
+
+.lock-toggle-btn.unlocked .lock-icon-unlocked {
+  display: inline-flex;
+}
+
+.lock-toggle-btn.locked {
+  color: var(--danger-color);
+  border-color: var(--danger-color);
+  background: rgba(255, 59, 48, 0.08);
 }
 
 /* Notification */
