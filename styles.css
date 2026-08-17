@@ -707,6 +707,16 @@ textarea:focus {
   margin-bottom: 8px;
 }
 
+.active-extra-warning {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger-color);
+  background: rgba(255, 59, 48, 0.1);
+  padding: 8px 12px;
+  border-radius: var(--border-radius-sm);
+  margin-bottom: 10px;
+}
+
 .extra-occurrences-list {
   display: flex;
   flex-wrap: wrap;

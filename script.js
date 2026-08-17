@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
     const extraOccurrencesList = document.getElementById('extraOccurrencesList');
     const toggleExtraOccurrenceBtn = document.getElementById('toggleExtraOccurrenceBtn');
+    const activeExtraWarning = document.getElementById('activeExtraWarning');
     const wordMarkedList = document.getElementById('wordMarkedList');
     const prevWordBtn = document.getElementById('prevWordBtn');
     const nextWordBtn = document.getElementById('nextWordBtn');
@@ -51,6 +52,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // distinct du nombre de mots déjà marqués — permet de revoir/corriger
     // un mot précédent sans devoir tout annuler jusque-là.
     let wordViewIndex = 0;
+    // Index du mot dont la dernière occurrence supplémentaire est encore
+    // ouverte (null si aucune) — permet d'enchaîner l'occurrence sur le
+    // mot suivant en navigant, comme le marquage principal. Remis à zéro
+    // à chaque ouverture/fermeture du mode mots.
+    let activeExtraWordIndex = null;
 
     // Verrous anti-clic-réflexe : Début/Fin verset et Marquer ce mot sont
     // des habitudes de clic — utiles quand on marque activement, gênants
@@ -452,6 +458,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         wordModeVerseIndex = index;
         wordViewIndex = verse.words.length;
+        activeExtraWordIndex = null;
         const occ = getOccurrenceInfo(index);
         wordModeVerseId.textContent = verse.id + (occ ? ` (occurrence ${occ.position}/${occ.total})` : '');
         // Avance directement l'audio au début du verset — pas besoin de
@@ -472,7 +479,26 @@ document.addEventListener('DOMContentLoaded', function() {
         wordModeVerseIndex = null;
         wordModeSection.style.display = 'none';
         verseMarkingLocked = false;
+        activeExtraWordIndex = null;
         renderVerseLock();
+    }
+
+    // Vrai si une occurrence supplémentaire est en cours (démarrée, pas
+    // encore terminée) — sert à avertir avant de fermer/changer de verset
+    // sans l'avoir refermée, plutôt que de la laisser silencieusement
+    // ouverte (fin `?` à l'export, comme c'est arrivé la première fois).
+    function hasOpenExtraOccurrence() {
+        if (wordModeVerseIndex === null || activeExtraWordIndex === null) return false;
+        const occurrences = verses[wordModeVerseIndex].words[activeExtraWordIndex];
+        return occurrences.length > 1 && occurrences[occurrences.length - 1].end === null;
+    }
+
+    function confirmLeavingOpenExtraOccurrence() {
+        if (!hasOpenExtraOccurrence()) return true;
+        return window.confirm(
+            `Une occurrence supplémentaire est encore ouverte sur le mot ${activeExtraWordIndex + 1} ` +
+            '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
+        );
     }
 
     // `wordViewIndex` navigue parmi : les mots déjà marqués [0, doneCount-1]
@@ -524,21 +550,35 @@ document.addEventListener('DOMContentLoaded', function() {
             .join('<br>');
     }
 
-    // Occurrences supplémentaires d'un mot : le cheikh peut le redire plus
-    // tard dans le même passage sans reprendre tout le verset. Ce sont des
-    // plages libres (pas de chaînage contigu entre elles ni avec la
-    // principale) — on ajoute un point de départ, puis on ferme cette même
-    // occurrence au clic suivant.
+    // Occurrences supplémentaires : le cheikh peut redire un mot, ou une
+    // suite de mots, plus tard dans le même passage. Comme le marquage
+    // principal, ça enchaîne : démarrer une occurrence sur un mot puis
+    // naviguer vers le mot suivant pour en démarrer une autre ferme
+    // automatiquement la précédente au même instant (`activeExtraWordIndex`
+    // retient sur quel mot l'occurrence est encore ouverte, quel que soit
+    // le mot affiché à l'instant du clic). Un seul mot répété isolément :
+    // un clic pour démarrer, un clic (sur ce même mot) pour terminer.
     function renderExtraOccurrences() {
         const verse = verses[wordModeVerseIndex];
         const occurrences = verse.words[wordViewIndex];
         const extras = occurrences.slice(1);
-        const lastOpen = extras.length > 0 && extras[extras.length - 1].end === null;
 
-        toggleExtraOccurrenceBtn.textContent = lastOpen
-            ? 'Terminer cette occurrence ici'
-            : '+ Ajouter une occurrence ici';
+        if (activeExtraWordIndex === null) {
+            toggleExtraOccurrenceBtn.textContent = '+ Ajouter une occurrence ici';
+        } else if (activeExtraWordIndex === wordViewIndex) {
+            toggleExtraOccurrenceBtn.textContent = 'Terminer cette occurrence ici';
+        } else {
+            toggleExtraOccurrenceBtn.textContent = 'Continuer ici (ferme le mot précédent)';
+        }
         toggleExtraOccurrenceBtn.disabled = wordMarkingLocked;
+
+        if (activeExtraWordIndex !== null && activeExtraWordIndex !== wordViewIndex) {
+            const openStart = verse.words[activeExtraWordIndex][verse.words[activeExtraWordIndex].length - 1].start;
+            activeExtraWarning.textContent = `⚠ Occurrence encore ouverte sur le mot ${activeExtraWordIndex + 1} depuis ${openStart.toFixed(2)}s — navigue jusque-là pour la terminer, ou clique ici pour l'y rattacher et l'enchaîner.`;
+            activeExtraWarning.style.display = '';
+        } else {
+            activeExtraWarning.style.display = 'none';
+        }
 
         extraOccurrencesList.innerHTML = extras.length === 0
             ? '<span style="color: var(--text-secondary); font-size: 13px;">Aucune occurrence supplémentaire</span>'
@@ -548,6 +588,10 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.extraIndex, 10);
                 occurrences.splice(idx + 1, 1); // +1 : l'index 0 est la principale
+                const stillOpen = occurrences.length > 1 && occurrences[occurrences.length - 1].end === null;
+                if (activeExtraWordIndex === wordViewIndex && !stillOpen) {
+                    activeExtraWordIndex = null;
+                }
                 renderWordMode();
                 updateVerseList();
             });
@@ -557,18 +601,26 @@ document.addEventListener('DOMContentLoaded', function() {
     toggleExtraOccurrenceBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
         const verse = verses[wordModeVerseIndex];
-        const occurrences = verse.words[wordViewIndex];
-        const extras = occurrences.slice(1);
-        const lastOpen = extras.length > 0 && extras[extras.length - 1].end === null;
         const time = audioPlayer.currentTime;
 
-        if (lastOpen) {
+        if (activeExtraWordIndex !== null && activeExtraWordIndex !== wordViewIndex) {
+            // Ferme l'occurrence ouverte sur l'AUTRE mot, à cet instant —
+            // c'est ce qui chaîne une phrase répétée sur plusieurs mots.
+            const other = verse.words[activeExtraWordIndex];
+            other[other.length - 1].end = time;
+        }
+
+        if (activeExtraWordIndex === wordViewIndex) {
+            const occurrences = verse.words[wordViewIndex];
             occurrences[occurrences.length - 1].end = time;
+            activeExtraWordIndex = null;
             showNotification('Occurrence supplémentaire terminée');
         } else {
-            occurrences.push({ start: time, end: null });
-            showNotification('Nouvelle occurrence démarrée — reclique pour la terminer');
+            verse.words[wordViewIndex].push({ start: time, end: null });
+            activeExtraWordIndex = wordViewIndex;
+            showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
         }
+
         renderWordMode();
         updateVerseList();
     });
@@ -650,7 +702,10 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Dernier mot annulé');
     });
 
-    closeWordModeBtn.addEventListener('click', closeWordMode);
+    closeWordModeBtn.addEventListener('click', function() {
+        if (!confirmLeavingOpenExtraOccurrence()) return;
+        closeWordMode();
+    });
 
     // Passe directement au mode mots du prochain verset marquable (données
     // de mots dispo + déjà borné), sans repasser par la liste principale.
@@ -664,6 +719,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     nextVerseWordsBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null) return;
+        if (!confirmLeavingOpenExtraOccurrence()) return;
         const nextIndex = findNextWordableVerseIndex(wordModeVerseIndex);
         if (nextIndex === -1) {
             showNotification('Aucun verset suivant marquable après celui-ci');
