@@ -229,28 +229,57 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Contrôles de temps personnalisés
+    function seekBy(timeChange) {
+        audioPlayer.currentTime = Math.max(0, Math.min(audioPlayer.duration, audioPlayer.currentTime + timeChange));
+        updateTimeDisplay();
+    }
+
     timeControlBtns.forEach(btn => {
         btn.addEventListener('click', function() {
-            const timeChange = parseFloat(this.getAttribute('data-time'));
-            audioPlayer.currentTime = Math.max(0, Math.min(audioPlayer.duration, audioPlayer.currentTime + timeChange));
-            updateTimeDisplay();
+            seekBy(parseFloat(this.getAttribute('data-time')));
         });
     });
-    
+
     // Bouton play/pause personnalisé
-    playPauseBtn.addEventListener('click', function() {
+    function togglePlayPause() {
         if (!audioPlayer.src) {
             showNotification('Veuillez charger un fichier audio d\'abord');
             return;
         }
-        
+
         if (audioPlayer.paused) {
             audioPlayer.play();
         } else {
             audioPlayer.pause();
         }
+    }
+
+    playPauseBtn.addEventListener('click', togglePlayPause);
+
+    // Raccourcis clavier : espace = lecture/pause, c/v/b = reculer de
+    // 5/2/1s, n/,/; = avancer de 1/2/5s. Ignorés si le focus est dans un
+    // champ de saisie (numéro de sourate/verset, zone d'export) pour ne
+    // pas interférer avec la frappe.
+    const KEY_SEEK_SECONDS = { c: -5, v: -2, b: -1, n: 1, ',': 2, ';': 5 };
+
+    document.addEventListener('keydown', function(e) {
+        const tag = document.activeElement?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (!audioPlayer.src) return;
+
+        if (e.code === 'Space') {
+            e.preventDefault();
+            togglePlayPause();
+            return;
+        }
+
+        const seconds = KEY_SEEK_SECONDS[e.key.toLowerCase()];
+        if (seconds !== undefined) {
+            e.preventDefault();
+            seekBy(seconds);
+        }
     });
-    
+
     // Synchroniser l'icône avec l'état de l'audio
     audioPlayer.addEventListener('play', function() {
         playPauseBtn.classList.add('playing');
