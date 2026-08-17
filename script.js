@@ -1,13 +1,6 @@
-// Données mot par mot — pilote Al-Ikhlas (sourate 112). Verset -> mots
-// arabes, dans le même ordre/découpage que le mot par mot déjà affiché dans
-// tafsir-app (src/lib/data/quran-wbw/generated/112.json), sans le repère de
-// fin de verset (non prononcé, pas de timing à lui donner).
-const WORDS_BY_VERSE = {
-    1: ["قُلۡ", "هُوَ", "ٱللَّهُ", "أَحَدٌ"],
-    2: ["ٱللَّهُ", "ٱلصَّمَدُ"],
-    3: ["لَمۡ", "يَلِدۡ", "وَلَمۡ", "يُولَدۡ"],
-    4: ["وَلَمۡ", "يَكُن", "لَّهُۥ", "كُفُوًا", "أَحَدُۢ"],
-};
+// WORDS_BY_SURAH (data/words-by-surah.js) et EXISTING_TIMINGS
+// (data/existing-timings.js) sont générées depuis tafsir-app — voir ces
+// fichiers pour leur origine. Chargées comme <script> avant celui-ci.
 
 document.addEventListener('DOMContentLoaded', function() {
     const audioPlayer = document.getElementById('audioPlayer');
@@ -38,10 +31,80 @@ document.addEventListener('DOMContentLoaded', function() {
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const wordMarkedList = document.getElementById('wordMarkedList');
+    const surahIdInput = document.getElementById('surahId');
+    const surahWordsStatus = document.getElementById('surahWordsStatus');
+    const existingTimingsList = document.getElementById('existingTimingsList');
 
     let verses = [];
     let updateTimer;
     let wordModeVerseIndex = null;
+
+    // Liste des mots (arabe) du verset `verseId` pour la sourate en cours,
+    // ou undefined si les données ne sont pas disponibles pour ce verset.
+    function getWordList(verseId) {
+        const surahId = parseInt(surahIdInput.value) || 1;
+        return WORDS_BY_SURAH[surahId]?.[verseId];
+    }
+
+    function renderSurahStatus() {
+        const surahId = parseInt(surahIdInput.value) || 1;
+        const hasWords = Boolean(WORDS_BY_SURAH[surahId]);
+        surahWordsStatus.textContent = hasWords
+            ? '✓ données de mots disponibles'
+            : '✗ pas de données de mots pour cette sourate';
+        surahWordsStatus.classList.toggle('has-words', hasWords);
+    }
+
+    function renderExistingTimingsList() {
+        const surahId = parseInt(surahIdInput.value) || 1;
+        const parts = EXISTING_TIMINGS[surahId];
+        existingTimingsList.innerHTML = '';
+
+        if (!parts || parts.length === 0) {
+            existingTimingsList.innerHTML =
+                '<p style="color: var(--text-secondary); font-size: 13px;">Aucun timing existant pour cette sourate — marquage depuis zéro.</p>';
+            return;
+        }
+
+        parts.forEach((part) => {
+            const row = document.createElement('div');
+            row.className = 'existing-timing-row';
+
+            const label = document.createElement('span');
+            label.textContent = `${part.title || part.id} (${part.timings.length} versets)`;
+
+            const loadBtn = document.createElement('button');
+            loadBtn.className = 'copy-btn load-timings-btn';
+            loadBtn.textContent = 'Charger';
+            loadBtn.title = 'Remplace les versets actuellement marqués par ces timings existants';
+            loadBtn.addEventListener('click', () => {
+                verses = part.timings.map((t) => ({
+                    id: t.id,
+                    start: t.startTime,
+                    end: t.endTime,
+                    words: [],
+                }));
+                const lastId = verses.length > 0 ? verses[verses.length - 1].id : 0;
+                verseIdInput.value = lastId + 1;
+                closeWordMode();
+                updateVerseList();
+                showNotification(`Timings de "${part.title || part.id}" chargés (${verses.length} versets)`);
+            });
+
+            row.appendChild(label);
+            row.appendChild(loadBtn);
+            existingTimingsList.appendChild(row);
+        });
+    }
+
+    surahIdInput.addEventListener('input', function() {
+        renderSurahStatus();
+        renderExistingTimingsList();
+        updateVerseList();
+    });
+
+    renderSurahStatus();
+    renderExistingTimingsList();
     
     // Charger un fichier audio (clic ou changement input)
     let lastFile = null;
@@ -242,7 +305,7 @@ document.addEventListener('DOMContentLoaded', function() {
             verseEntry.className = 'verse-entry';
             
             const verseText = document.createElement('span');
-            const wordList = WORDS_BY_VERSE[verse.id];
+            const wordList = getWordList(verse.id);
             const wordsProgress = wordList ? ` — mots ${verse.words.length}/${wordList.length}` : '';
             verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },${wordsProgress}`;
 
@@ -254,7 +317,7 @@ document.addEventListener('DOMContentLoaded', function() {
             wordsBtn.textContent = 'Mots';
             wordsBtn.disabled = !wordList || verse.end === null;
             wordsBtn.title = !wordList
-                ? 'Pas de liste de mots pour ce verset (pilote Al-Ikhlas uniquement)'
+                ? 'Pas de données de mots pour ce verset'
                 : verse.end === null
                     ? 'Marque d\'abord la fin du verset'
                     : 'Marquer les mots de ce verset';
@@ -303,7 +366,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ouvre le mode mots pour un verset (déjà borné start+end).
     function openWordMode(index) {
         const verse = verses[index];
-        const wordList = WORDS_BY_VERSE[verse.id];
+        const wordList = getWordList(verse.id);
         if (!wordList || verse.end === null) return;
 
         wordModeVerseIndex = index;
@@ -320,7 +383,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderWordMode() {
         const verse = verses[wordModeVerseIndex];
-        const wordList = WORDS_BY_VERSE[verse.id];
+        const wordList = getWordList(verse.id);
         const doneCount = verse.words.length;
 
         if (doneCount >= wordList.length) {
@@ -341,7 +404,7 @@ document.addEventListener('DOMContentLoaded', function() {
     markWordBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null || !audioPlayer.src) return;
         const verse = verses[wordModeVerseIndex];
-        const wordList = WORDS_BY_VERSE[verse.id];
+        const wordList = getWordList(verse.id);
         const time = audioPlayer.currentTime;
         const doneCount = verse.words.length;
         if (doneCount >= wordList.length) return;

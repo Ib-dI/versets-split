@@ -558,6 +558,52 @@ textarea:focus {
   background: rgba(60, 60, 60, 1);
 }
 
+/* Sélecteur de sourate + timings existants */
+.surah-section {
+  margin-bottom: var(--padding-lg);
+  padding-bottom: var(--padding-lg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.surah-words-status {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.surah-words-status.has-words {
+  color: var(--success-color);
+}
+
+.existing-timings-list {
+  margin-top: var(--padding-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.existing-timing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px var(--padding-md);
+  border-radius: var(--border-radius-sm);
+  background: rgba(67, 97, 238, 0.06);
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.dark-mode .existing-timing-row {
+  background: rgba(76, 201, 240, 0.08);
+}
+
+.existing-timing-row .load-timings-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 /* Word mode (marquage mot à mot) */
 .word-mode-section {
   background: var(--card-bg-color);

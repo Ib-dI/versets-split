@@ -26,6 +26,15 @@
       </div>
 
       <div class="player-container">
+        <div class="surah-section">
+          <div class="verse-id-input">
+            <label for="surahId">Sourate:</label>
+            <input type="number" id="surahId" value="1" min="1" max="114" step="1" />
+            <span id="surahWordsStatus" class="surah-words-status"></span>
+          </div>
+          <div id="existingTimingsList" class="existing-timings-list"></div>
+        </div>
+
         <div class="file-section">
           <div class="file-input-wrapper">
             <div id="audioDropZone" class="file-drop-zone">
@@ -377,6 +386,8 @@
       });
     </script>
 
+    <script src="data/words-by-surah.js"></script>
+    <script src="data/existing-timings.js"></script>
     <script src="script.js"></script>
   </body>
 </html>
