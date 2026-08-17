@@ -28,9 +28,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const wordProgress = document.getElementById('wordProgress');
     const wordCurrent = document.getElementById('wordCurrent');
     const markWordBtn = document.getElementById('markWordBtn');
+    const correctWordBtn = document.getElementById('correctWordBtn');
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const wordMarkedList = document.getElementById('wordMarkedList');
+    const prevWordBtn = document.getElementById('prevWordBtn');
+    const nextWordBtn = document.getElementById('nextWordBtn');
     const surahIdInput = document.getElementById('surahId');
     const surahWordsStatus = document.getElementById('surahWordsStatus');
     const existingTimingsList = document.getElementById('existingTimingsList');
@@ -40,6 +43,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let verses = [];
     let updateTimer;
     let wordModeVerseIndex = null;
+    // Index du mot affiché dans le panneau (navigable via les flèches),
+    // distinct du nombre de mots déjà marqués — permet de revoir/corriger
+    // un mot précédent sans devoir tout annuler jusque-là.
+    let wordViewIndex = 0;
 
     // Verrous anti-clic-réflexe : Début/Fin verset et Marquer ce mot sont
     // des habitudes de clic — utiles quand on marque activement, gênants
@@ -440,6 +447,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!wordList || verse.end === null) return;
 
         wordModeVerseIndex = index;
+        wordViewIndex = verse.words.length;
         const occ = getOccurrenceInfo(index);
         wordModeVerseId.textContent = verse.id + (occ ? ` (occurrence ${occ.position}/${occ.total})` : '');
         // Avance directement l'audio au début du verset — pas besoin de
@@ -463,25 +471,53 @@ document.addEventListener('DOMContentLoaded', function() {
         renderVerseLock();
     }
 
+    // `wordViewIndex` navigue parmi : les mots déjà marqués [0, doneCount-1]
+    // (relecture/correction), PLUS un emplacement "à marquer" à l'index
+    // doneCount tant que le verset n'est pas complet. Une fois complet, il
+    // n'y a plus d'emplacement à marquer, seulement des mots à corriger.
     function renderWordMode() {
         const verse = verses[wordModeVerseIndex];
         const wordList = getWordList(verse.id);
+        const total = wordList.length;
         const doneCount = verse.words.length;
+        const maxIndex = doneCount < total ? doneCount : total - 1;
+        wordViewIndex = Math.min(Math.max(wordViewIndex, 0), maxIndex);
+        const isPendingSlot = wordViewIndex === doneCount && doneCount < total;
 
-        if (doneCount >= wordList.length) {
-            wordProgress.textContent = `Verset ${verse.id} — tous les mots sont marqués`;
-            wordCurrent.textContent = '✓';
-            markWordBtn.disabled = true;
-        } else {
-            wordProgress.textContent = `Mot ${doneCount + 1} / ${wordList.length}`;
-            wordCurrent.textContent = wordList[doneCount];
+        prevWordBtn.disabled = wordViewIndex <= 0;
+        nextWordBtn.disabled = wordViewIndex >= maxIndex;
+
+        wordProgress.textContent = isPendingSlot
+            ? `Mot ${wordViewIndex + 1} / ${total} — à marquer`
+            : `Mot ${wordViewIndex + 1} / ${total}` + (doneCount >= total ? ' — tous les mots sont marqués' : ' (déjà marqué)');
+        wordCurrent.textContent = wordList[wordViewIndex];
+
+        if (isPendingSlot) {
+            markWordBtn.style.display = '';
+            correctWordBtn.style.display = 'none';
             markWordBtn.disabled = wordMarkingLocked;
+        } else {
+            markWordBtn.style.display = 'none';
+            correctWordBtn.style.display = '';
+            const w = verse.words[wordViewIndex];
+            correctWordBtn.textContent = `Recaler le début ici (actuel : ${w.start.toFixed(2)}s)`;
+            correctWordBtn.disabled = wordMarkingLocked;
         }
 
         wordMarkedList.innerHTML = verse.words
-            .map((w, i) => `${i + 1}. ${wordList[i]} — ${w.start.toFixed(2)} → ${w.end !== null ? w.end.toFixed(2) : '?'}`)
+            .map((w, i) => `${i === wordViewIndex ? '→ ' : '　'}${i + 1}. ${wordList[i]} — ${w.start.toFixed(2)} → ${w.end !== null ? w.end.toFixed(2) : '?'}`)
             .join('<br>');
     }
+
+    prevWordBtn.addEventListener('click', function() {
+        wordViewIndex -= 1;
+        renderWordMode();
+    });
+
+    nextWordBtn.addEventListener('click', function() {
+        wordViewIndex += 1;
+        renderWordMode();
+    });
 
     markWordBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null || !audioPlayer.src) return;
@@ -506,8 +542,29 @@ document.addEventListener('DOMContentLoaded', function() {
             verse.words.push({ start: time, end: null });
         }
 
+        wordViewIndex = verse.words.length;
         renderWordMode();
         updateVerseList();
+    });
+
+    // Recale le début d'un mot déjà marqué sans devoir tout annuler après
+    // lui. Comme les mots d'un verset se suivent sans blanc, redéfinir le
+    // début du mot N déplace aussi la fin du mot N-1 au même instant — la
+    // continuité est ainsi préservée automatiquement.
+    correctWordBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
+        const verse = verses[wordModeVerseIndex];
+        if (wordViewIndex >= verse.words.length) return;
+
+        const time = audioPlayer.currentTime;
+        verse.words[wordViewIndex].start = time;
+        if (wordViewIndex > 0) {
+            verse.words[wordViewIndex - 1].end = time;
+        }
+
+        renderWordMode();
+        updateVerseList();
+        showNotification(`Début du mot ${wordViewIndex + 1} recalé à ${time.toFixed(2)}s`);
     });
 
     undoWordBtn.addEventListener('click', function() {
@@ -521,6 +578,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (verse.words.length > 0) {
             verse.words[verse.words.length - 1].end = null;
         }
+        wordViewIndex = verse.words.length;
         renderWordMode();
         updateVerseList();
         showNotification('Dernier mot annulé');

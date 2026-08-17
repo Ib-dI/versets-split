@@ -308,7 +308,15 @@
       <div class="word-mode-section" id="wordModeSection" style="display: none">
         <h3>Mots du verset <span id="wordModeVerseId"></span></h3>
         <div class="word-progress" id="wordProgress">Mot 1 / 1</div>
-        <div class="word-current" id="wordCurrent" dir="rtl" lang="ar"></div>
+        <div class="word-nav">
+          <button type="button" class="word-nav-btn" id="prevWordBtn" title="Mot précédent">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="word-current" id="wordCurrent" dir="rtl" lang="ar"></div>
+          <button type="button" class="word-nav-btn" id="nextWordBtn" title="Mot suivant">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
         <div class="word-mode-actions">
           <button
             type="button"
@@ -321,6 +329,7 @@
             <span class="lock-toggle-label">Mots</span>
           </button>
           <button class="start-btn" id="markWordBtn">Marquer ce mot</button>
+          <button class="start-btn" id="correctWordBtn" style="display: none">Recaler le début ici</button>
           <button class="end-btn" id="undoWordBtn">Annuler dernier mot</button>
           <button class="clear-audio-btn" id="closeWordModeBtn">Fermer</button>
         </div>

@@ -641,11 +641,33 @@ textarea:focus {
   margin-bottom: var(--padding-md);
 }
 
+.word-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: var(--padding-lg);
+}
+
+.word-nav-btn {
+  flex-shrink: 0;
+  padding: 0 var(--padding-md);
+  background: var(--card-bg-color);
+  border: 1.5px solid var(--border-color);
+  color: var(--text-color);
+  box-shadow: none;
+}
+
+.word-nav-btn:hover:not(:disabled) {
+  transform: none;
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
 .word-current {
+  flex: 1;
   font-size: 2.5rem;
   font-weight: 600;
   color: var(--text-color);
-  margin-bottom: var(--padding-lg);
   padding: var(--padding-lg);
   background: rgba(67, 97, 238, 0.06);
   border-radius: var(--border-radius-lg);
