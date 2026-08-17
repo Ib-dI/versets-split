@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const wordCarouselTrack = document.getElementById('wordCarouselTrack');
     const markWordBtn = document.getElementById('markWordBtn');
     const correctWordBtn = document.getElementById('correctWordBtn');
+    const terminateWordBtn = document.getElementById('terminateWordBtn');
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
@@ -556,19 +557,30 @@ document.addEventListener('DOMContentLoaded', function() {
         if (isPendingSlot) {
             markWordBtn.style.display = '';
             correctWordBtn.style.display = 'none';
+            terminateWordBtn.style.display = 'none';
             markWordBtn.disabled = wordMarkingLocked;
             extraOccurrencesSection.style.display = 'none';
         } else {
             markWordBtn.style.display = 'none';
             correctWordBtn.style.display = '';
-            extraOccurrencesSection.style.display = '';
             // occurrences[0] = occurrence principale (chaîne contiguë avec
             // les mots voisins) ; occurrences[1+] = occurrences
             // supplémentaires, indépendantes, gérées plus bas.
             const primary = verse.words[wordViewIndex][0];
             correctWordBtn.textContent = `Recaler le début ici (actuel : ${primary.start.toFixed(2)}s)`;
             correctWordBtn.disabled = wordMarkingLocked;
-            renderExtraOccurrences();
+
+            // Seul le mot le plus récemment marqué peut avoir sa principale
+            // encore ouverte (.end === null) — tant que ce n'est pas fermé,
+            // ajouter une occurrence supplémentaire ici n'a pas de sens (on
+            // se retrouverait avec deux occurrences ouvertes en même temps
+            // sur le même mot). On propose donc de la fermer directement au
+            // lieu d'afficher la section occurrences.
+            const primaryOpen = primary.end === null;
+            terminateWordBtn.style.display = primaryOpen ? '' : 'none';
+            terminateWordBtn.disabled = wordMarkingLocked;
+            extraOccurrencesSection.style.display = primaryOpen ? 'none' : '';
+            if (!primaryOpen) renderExtraOccurrences();
         }
 
         wordMarkedList.innerHTML = verse.words
@@ -681,29 +693,62 @@ document.addEventListener('DOMContentLoaded', function() {
         const verse = verses[wordModeVerseIndex];
         const time = audioPlayer.currentTime;
 
-        if (activeExtraWordIndex !== null && activeExtraWordIndex !== wordViewIndex) {
+        if (activeExtraWordIndex === wordViewIndex) {
+            const occurrences = verse.words[wordViewIndex];
+            occurrences[occurrences.length - 1].end = time;
+            activeExtraWordIndex = null;
+            showNotification('Occurrence supplémentaire terminée');
+            renderWordMode();
+            updateVerseList();
+            return;
+        }
+
+        // Garde-fou : un mot dont la principale est encore ouverte ne peut
+        // pas recevoir d'occurrence supplémentaire — on se retrouverait avec
+        // deux occurrences ouvertes en même temps sur le même mot, sans
+        // façon claire de dire laquelle est laquelle. Ne devrait pas être
+        // cliquable (la section est masquée dans ce cas, voir
+        // renderWordMode), gardé ici en filet de sécurité.
+        const primary = verse.words[wordViewIndex][0];
+        if (primary.end === null) {
+            showNotification(`Le mot ${wordViewIndex + 1} a encore une occurrence principale ouverte — termine-la d'abord ("Terminer ce mot ici").`);
+            return;
+        }
+
+        if (activeExtraWordIndex !== null) {
             // Ferme l'occurrence ouverte sur l'AUTRE mot, à cet instant —
             // c'est ce qui chaîne une phrase répétée sur plusieurs mots.
             const other = verse.words[activeExtraWordIndex];
             other[other.length - 1].end = time;
         }
 
-        if (activeExtraWordIndex === wordViewIndex) {
-            const occurrences = verse.words[wordViewIndex];
-            occurrences[occurrences.length - 1].end = time;
-            activeExtraWordIndex = null;
-            showNotification('Occurrence supplémentaire terminée');
-        } else {
-            verse.words[wordViewIndex].push({ start: time, end: null });
-            activeExtraWordIndex = wordViewIndex;
-            const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
-            if (!resolved) {
-                showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
-            }
+        verse.words[wordViewIndex].push({ start: time, end: null });
+        activeExtraWordIndex = wordViewIndex;
+        const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
+        if (!resolved) {
+            showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
         }
 
         renderWordMode();
         updateVerseList();
+    });
+
+    // Ferme directement la principale encore ouverte du mot affiché (seul
+    // le mot le plus récemment marqué peut être dans ce cas). Équivalent
+    // manuel de ce qui se passait avant automatiquement (voir la note
+    // au-dessus de shrinkLastWordEndIfNeeded) : l'utilisateur choisit
+    // explicitement l'instant, plutôt qu'une fermeture devinée à l'avance.
+    terminateWordBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
+        const verse = verses[wordModeVerseIndex];
+        const primary = verse.words[wordViewIndex]?.[0];
+        if (!primary || primary.end !== null) return;
+
+        const time = audioPlayer.currentTime;
+        primary.end = time;
+        renderWordMode();
+        updateVerseList();
+        showNotification(`Mot ${wordViewIndex + 1} terminé à ${time.toFixed(2)}s`);
     });
 
     // Ferme l'occurrence ouverte sur le mot courant ET en ouvre une sur le
@@ -714,13 +759,29 @@ document.addEventListener('DOMContentLoaded', function() {
         if (activeExtraWordIndex === null || activeExtraWordIndex !== wordViewIndex) return;
         const verse = verses[wordModeVerseIndex];
         const total = getWordList(verse.id)?.length ?? 0;
-        if (wordViewIndex + 1 >= total) return;
+        const targetIndex = wordViewIndex + 1;
+        if (targetIndex >= total) return;
+
+        // Garde-fou : le mot suivant ne peut recevoir une occurrence
+        // enchaînée que si sa propre principale est déjà fermée — sinon on
+        // se retrouve avec deux occurrences ouvertes en même temps sur ce
+        // mot (sa principale + celle qu'on vient d'y pousser), sans façon
+        // claire de fermer l'une sans l'autre ensuite.
+        const target = verse.words[targetIndex];
+        if (!target) {
+            showNotification(`Le mot ${targetIndex + 1} n'a pas encore d'occurrence principale — marque-le d'abord normalement.`);
+            return;
+        }
+        if (target[0].end === null) {
+            showNotification(`Le mot ${targetIndex + 1} a encore une occurrence principale ouverte — termine-la d'abord ("Terminer ce mot ici") avant d'y enchaîner une occurrence.`);
+            return;
+        }
 
         const time = audioPlayer.currentTime;
         const current = verse.words[wordViewIndex];
         current[current.length - 1].end = time;
 
-        wordViewIndex += 1;
+        wordViewIndex = targetIndex;
         verse.words[wordViewIndex].push({ start: time, end: null });
         activeExtraWordIndex = wordViewIndex;
         const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
