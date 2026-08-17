@@ -663,18 +663,47 @@ textarea:focus {
   color: var(--primary-color);
 }
 
-.word-current {
+.word-carousel {
   flex: 1;
-  font-size: 2.5rem;
-  font-weight: 600;
-  color: var(--text-color);
-  padding: var(--padding-lg);
+  position: relative;
+  overflow: hidden;
+  padding: var(--padding-lg) 0;
   background: rgba(67, 97, 238, 0.06);
   border-radius: var(--border-radius-lg);
 }
 
-.dark-mode .word-current {
+.dark-mode .word-carousel {
   background: rgba(76, 201, 240, 0.08);
+}
+
+.word-carousel-track {
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  width: max-content;
+  /* Padding en % : résolu contre la largeur du conteneur (.word-carousel),
+     donne assez de marge de chaque côté pour recentrer n'importe quel mot,
+     y compris le tout premier ou le tout dernier du verset. */
+  padding-inline: 50%;
+  white-space: nowrap;
+  transition: transform 0.25s ease-out;
+}
+
+.carousel-word {
+  font-size: 1.3rem;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  transition:
+    font-size 0.2s ease,
+    opacity 0.2s ease,
+    color 0.2s ease;
+}
+
+.carousel-word.active {
+  font-size: 2.3rem;
+  font-weight: 600;
+  color: var(--text-color);
+  opacity: 1;
 }
 
 .word-mode-actions {

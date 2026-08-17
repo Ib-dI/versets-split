@@ -26,7 +26,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const wordModeSection = document.getElementById('wordModeSection');
     const wordModeVerseId = document.getElementById('wordModeVerseId');
     const wordProgress = document.getElementById('wordProgress');
-    const wordCurrent = document.getElementById('wordCurrent');
+    const wordCarousel = document.getElementById('wordCarousel');
+    const wordCarouselTrack = document.getElementById('wordCarouselTrack');
     const markWordBtn = document.getElementById('markWordBtn');
     const correctWordBtn = document.getElementById('correctWordBtn');
     const undoWordBtn = document.getElementById('undoWordBtn');
@@ -502,6 +503,35 @@ document.addEventListener('DOMContentLoaded', function() {
         );
     }
 
+    // Affiche tous les mots du verset (pas seulement le mot courant) dans
+    // une bande défilante, avec le mot actif toujours recentré — pour voir
+    // les mots voisins pendant le marquage, sans changer le comportement
+    // des boutons existants.
+    function renderWordCarousel(wordList, activeIndex) {
+        wordCarouselTrack.innerHTML = wordList
+            .map(
+                (w, i) =>
+                    `<span class="carousel-word${i === activeIndex ? ' active' : ''}" data-index="${i}">${w}</span>`,
+            )
+            .join('');
+
+        const activeEl = wordCarouselTrack.querySelector('.carousel-word.active');
+        if (!activeEl) return;
+
+        // Mesure l'écart entre le centre du mot actif et le centre du
+        // viewport, puis ajuste translateX de cet écart — fonctionne en
+        // coordonnées écran, donc indépendamment du sens RTL/LTR.
+        const viewportRect = wordCarousel.getBoundingClientRect();
+        const activeRect = activeEl.getBoundingClientRect();
+        const match = /translateX\(([-\d.]+)px\)/.exec(
+            wordCarouselTrack.style.transform,
+        );
+        const currentX = match ? parseFloat(match[1]) : 0;
+        const delta =
+            viewportRect.left + viewportRect.width / 2 - (activeRect.left + activeRect.width / 2);
+        wordCarouselTrack.style.transform = `translateX(${currentX + delta}px)`;
+    }
+
     // `wordViewIndex` navigue parmi : les mots déjà marqués [0, doneCount-1]
     // (relecture/correction), PLUS un emplacement "à marquer" à l'index
     // doneCount tant que le verset n'est pas complet. Une fois complet, il
@@ -521,7 +551,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wordProgress.textContent = isPendingSlot
             ? `Mot ${wordViewIndex + 1} / ${total} — à marquer`
             : `Mot ${wordViewIndex + 1} / ${total}` + (doneCount >= total ? ' — tous les mots sont marqués' : ' (déjà marqué)');
-        wordCurrent.textContent = wordList[wordViewIndex];
+        renderWordCarousel(wordList, wordViewIndex);
 
         if (isPendingSlot) {
             markWordBtn.style.display = '';
