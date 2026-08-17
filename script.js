@@ -601,6 +601,30 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Le dernier mot d'un verset a sa fin calée sur `verse.end` par défaut
+    // (voir markWordBtn) — une approximation, pas une vraie frontière
+    // observée comme pour les autres mots. Si une occurrence supplémentaire
+    // d'un AUTRE mot démarre avant cette fin, c'est la preuve que le
+    // cheikh a repris la parole plus tôt que prévu : on resserre la fin du
+    // dernier mot sur ce début plutôt que de laisser l'approximation.
+    function shrinkLastWordEndIfNeeded(verse, newOccurrenceWordIndex, startTime) {
+        const total = getWordList(verse.id)?.length;
+        if (!total) return false;
+        const lastIndex = total - 1;
+        if (newOccurrenceWordIndex === lastIndex) return false; // le dernier mot qui se répète lui-même n'informe rien
+        if (verse.words.length <= lastIndex) return false; // le dernier mot n'est pas encore marqué
+
+        const lastWordPrimary = verse.words[lastIndex][0];
+        if (lastWordPrimary.end !== null && startTime < lastWordPrimary.end) {
+            lastWordPrimary.end = startTime;
+            showNotification(
+                `Fin du dernier mot resserrée à ${startTime.toFixed(2)}s (occurrence détectée avant)`,
+            );
+            return true;
+        }
+        return false;
+    }
+
     toggleExtraOccurrenceBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
         const verse = verses[wordModeVerseIndex];
@@ -621,7 +645,10 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             verse.words[wordViewIndex].push({ start: time, end: null });
             activeExtraWordIndex = wordViewIndex;
-            showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
+            const shrunk = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
+            if (!shrunk) {
+                showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
+            }
         }
 
         renderWordMode();
