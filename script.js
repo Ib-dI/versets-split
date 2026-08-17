@@ -545,7 +545,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const primary = occurrences[0];
                 const extraCount = occurrences.length - 1;
                 const extraSuffix = extraCount > 0 ? ` (+${extraCount} occurrence${extraCount > 1 ? 's' : ''})` : '';
-                return `${i === wordViewIndex ? '→ ' : '　'}${i + 1}. ${wordList[i]} — ${primary.start.toFixed(2)} → ${primary.end !== null ? primary.end.toFixed(2) : '?'}${extraSuffix}`;
+                // <bdi> isole le mot arabe : sans ça, Chrome réordonne
+                // visuellement toute la ligne (nombres et tiret compris)
+                // autour du texte RTL, même avec dir="ltr" sur le conteneur.
+                return `${i === wordViewIndex ? '→ ' : '　'}${i + 1}. <bdi>${wordList[i]}</bdi> — ${primary.start.toFixed(2)} → ${primary.end !== null ? primary.end.toFixed(2) : '?'}${extraSuffix}`;
             })
             .join('<br>');
     }
