@@ -32,6 +32,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
+    const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
+    const extraOccurrencesList = document.getElementById('extraOccurrencesList');
+    const toggleExtraOccurrenceBtn = document.getElementById('toggleExtraOccurrenceBtn');
     const wordMarkedList = document.getElementById('wordMarkedList');
     const prevWordBtn = document.getElementById('prevWordBtn');
     const nextWordBtn = document.getElementById('nextWordBtn');
@@ -497,18 +500,78 @@ document.addEventListener('DOMContentLoaded', function() {
             markWordBtn.style.display = '';
             correctWordBtn.style.display = 'none';
             markWordBtn.disabled = wordMarkingLocked;
+            extraOccurrencesSection.style.display = 'none';
         } else {
             markWordBtn.style.display = 'none';
             correctWordBtn.style.display = '';
-            const w = verse.words[wordViewIndex];
-            correctWordBtn.textContent = `Recaler le début ici (actuel : ${w.start.toFixed(2)}s)`;
+            extraOccurrencesSection.style.display = '';
+            // occurrences[0] = occurrence principale (chaîne contiguë avec
+            // les mots voisins) ; occurrences[1+] = occurrences
+            // supplémentaires, indépendantes, gérées plus bas.
+            const primary = verse.words[wordViewIndex][0];
+            correctWordBtn.textContent = `Recaler le début ici (actuel : ${primary.start.toFixed(2)}s)`;
             correctWordBtn.disabled = wordMarkingLocked;
+            renderExtraOccurrences();
         }
 
         wordMarkedList.innerHTML = verse.words
-            .map((w, i) => `${i === wordViewIndex ? '→ ' : '　'}${i + 1}. ${wordList[i]} — ${w.start.toFixed(2)} → ${w.end !== null ? w.end.toFixed(2) : '?'}`)
+            .map((occurrences, i) => {
+                const primary = occurrences[0];
+                const extraCount = occurrences.length - 1;
+                const extraSuffix = extraCount > 0 ? ` (+${extraCount} occurrence${extraCount > 1 ? 's' : ''})` : '';
+                return `${i === wordViewIndex ? '→ ' : '　'}${i + 1}. ${wordList[i]} — ${primary.start.toFixed(2)} → ${primary.end !== null ? primary.end.toFixed(2) : '?'}${extraSuffix}`;
+            })
             .join('<br>');
     }
+
+    // Occurrences supplémentaires d'un mot : le cheikh peut le redire plus
+    // tard dans le même passage sans reprendre tout le verset. Ce sont des
+    // plages libres (pas de chaînage contigu entre elles ni avec la
+    // principale) — on ajoute un point de départ, puis on ferme cette même
+    // occurrence au clic suivant.
+    function renderExtraOccurrences() {
+        const verse = verses[wordModeVerseIndex];
+        const occurrences = verse.words[wordViewIndex];
+        const extras = occurrences.slice(1);
+        const lastOpen = extras.length > 0 && extras[extras.length - 1].end === null;
+
+        toggleExtraOccurrenceBtn.textContent = lastOpen
+            ? 'Terminer cette occurrence ici'
+            : '+ Ajouter une occurrence ici';
+        toggleExtraOccurrenceBtn.disabled = wordMarkingLocked;
+
+        extraOccurrencesList.innerHTML = extras.length === 0
+            ? '<span style="color: var(--text-secondary); font-size: 13px;">Aucune occurrence supplémentaire</span>'
+            : extras.map((e, i) => `<span class="extra-occurrence-row">${i + 1}. ${e.start.toFixed(2)} → ${e.end !== null ? e.end.toFixed(2) : '…'}<button type="button" class="remove-extra-btn" data-extra-index="${i}" title="Supprimer">×</button></span>`).join('');
+
+        extraOccurrencesList.querySelectorAll('.remove-extra-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.extraIndex, 10);
+                occurrences.splice(idx + 1, 1); // +1 : l'index 0 est la principale
+                renderWordMode();
+                updateVerseList();
+            });
+        });
+    }
+
+    toggleExtraOccurrenceBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
+        const verse = verses[wordModeVerseIndex];
+        const occurrences = verse.words[wordViewIndex];
+        const extras = occurrences.slice(1);
+        const lastOpen = extras.length > 0 && extras[extras.length - 1].end === null;
+        const time = audioPlayer.currentTime;
+
+        if (lastOpen) {
+            occurrences[occurrences.length - 1].end = time;
+            showNotification('Occurrence supplémentaire terminée');
+        } else {
+            occurrences.push({ start: time, end: null });
+            showNotification('Nouvelle occurrence démarrée — reclique pour la terminer');
+        }
+        renderWordMode();
+        updateVerseList();
+    });
 
     prevWordBtn.addEventListener('click', function() {
         wordViewIndex -= 1;
@@ -532,15 +595,15 @@ document.addEventListener('DOMContentLoaded', function() {
         // encore ouvert (pas de end), ce même instant en marque la fin —
         // les mots d'un verset se suivent sans blanc entre eux.
         if (doneCount > 0) {
-            verse.words[doneCount - 1].end = time;
+            verse.words[doneCount - 1][0].end = time;
         }
 
         if (doneCount === wordList.length - 1) {
             // Dernier mot : sa fin est déjà connue, c'est la fin du verset.
-            verse.words.push({ start: time, end: verse.end });
+            verse.words.push([{ start: time, end: verse.end }]);
             showNotification(`Verset ${verse.id} : tous les mots sont marqués`);
         } else {
-            verse.words.push({ start: time, end: null });
+            verse.words.push([{ start: time, end: null }]);
         }
 
         wordViewIndex = verse.words.length;
@@ -551,16 +614,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Recale le début d'un mot déjà marqué sans devoir tout annuler après
     // lui. Comme les mots d'un verset se suivent sans blanc, redéfinir le
     // début du mot N déplace aussi la fin du mot N-1 au même instant — la
-    // continuité est ainsi préservée automatiquement.
+    // continuité est ainsi préservée automatiquement. Ne touche que
+    // l'occurrence principale (index 0) ; les occurrences supplémentaires
+    // se gèrent séparément.
     correctWordBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
         const verse = verses[wordModeVerseIndex];
         if (wordViewIndex >= verse.words.length) return;
 
         const time = audioPlayer.currentTime;
-        verse.words[wordViewIndex].start = time;
+        verse.words[wordViewIndex][0].start = time;
         if (wordViewIndex > 0) {
-            verse.words[wordViewIndex - 1].end = time;
+            verse.words[wordViewIndex - 1][0].end = time;
         }
 
         renderWordMode();
@@ -577,7 +642,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         verse.words.pop();
         if (verse.words.length > 0) {
-            verse.words[verse.words.length - 1].end = null;
+            verse.words[verse.words.length - 1][0].end = null;
         }
         wordViewIndex = verse.words.length;
         renderWordMode();
@@ -609,11 +674,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Champ `words` au format TafsirAudioTiming.words de tafsir-app, prêt à
     // coller dans audios.ts. Absent tant qu'aucun mot n'a été marqué (les
-    // verset sans données de mots restent inchangés).
+    // versets sans données de mots restent inchangés). Chaque mot est un
+    // tableau d'occurrences ({startTime,endTime}[]) — normalement une
+    // seule (la principale), plus si le mot est redit plus tard dans le
+    // même passage. Miroir de VerseHighlight.occurrences côté tafsir-app,
+    // appliqué au niveau du mot plutôt que du verset.
     function formatWordsField(verse) {
         if (!verse.words || verse.words.length === 0) return '';
         const items = verse.words
-            .map((w) => `{ startTime: ${w.start.toFixed(2)}, endTime: ${w.end !== null ? w.end.toFixed(2) : '?'} }`)
+            .map((occurrences) => {
+                const ranges = occurrences
+                    .map((w) => `{ startTime: ${w.start.toFixed(2)}, endTime: ${w.end !== null ? w.end.toFixed(2) : '?'} }`)
+                    .join(', ');
+                return `[${ranges}]`;
+            })
             .join(', ');
         return `, words: [${items}]`;
     }
