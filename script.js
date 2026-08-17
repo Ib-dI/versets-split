@@ -292,25 +292,52 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Versets exportés');
     });
     
+    // Occurrences : plusieurs entrées de `verses` peuvent partager le même
+    // id (un verset repris plus loin dans la même partie audio, ou chargé
+    // depuis EXISTING_TIMINGS où c'est aussi possible). Chaque entrée garde
+    // ses propres start/end/words (déjà correct par construction, un
+    // objet distinct par occurrence) — ceci ne fait qu'identifier/afficher
+    // la position pour ne pas les confondre en marquant les mots.
+    function getOccurrenceInfo(index) {
+        const verse = verses[index];
+        const sameId = verses.filter((v) => v.id === verse.id);
+        if (sameId.length <= 1) return null;
+        const position = verses.slice(0, index + 1).filter((v) => v.id === verse.id).length;
+        return { position, total: sameId.length };
+    }
+
     function updateVerseList() {
         verseList.innerHTML = '';
-        
+
         if (verses.length === 0) {
             verseList.innerHTML = '<p style="text-align: center; color: #86868b; padding: 20px;">Aucun verset marqué</p>';
             return;
         }
-        
+
         verses.forEach((verse, index) => {
             const verseEntry = document.createElement('div');
             verseEntry.className = 'verse-entry';
-            
+
             const verseText = document.createElement('span');
             const wordList = getWordList(verse.id);
             const wordsProgress = wordList ? ` — mots ${verse.words.length}/${wordList.length}` : '';
-            verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },${wordsProgress}`;
+            const occ = getOccurrenceInfo(index);
+            const occSuffix = occ ? ` (occurrence ${occ.position}/${occ.total})` : '';
+            verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },${wordsProgress}${occSuffix}`;
 
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'verse-actions';
+
+            const seekBtn = document.createElement('button');
+            seekBtn.className = 'seek-btn verse-action-btn';
+            seekBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+            seekBtn.title = 'Avancer l\'audio au début de ce verset';
+            seekBtn.disabled = !audioPlayer.src;
+            seekBtn.addEventListener('click', () => {
+                audioPlayer.currentTime = verse.start;
+                updateTimeDisplay();
+                showNotification(`Audio avancé à ${verse.start.toFixed(2)}s (verset ${verse.id})`);
+            });
 
             const wordsBtn = document.createElement('button');
             wordsBtn.className = 'words-btn verse-action-btn';
@@ -353,6 +380,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 showNotification('Verset supprimé');
             });
             
+            actionsDiv.appendChild(seekBtn);
             actionsDiv.appendChild(wordsBtn);
             actionsDiv.appendChild(copyBtn);
             actionsDiv.appendChild(resetBtn);
@@ -370,7 +398,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!wordList || verse.end === null) return;
 
         wordModeVerseIndex = index;
-        wordModeVerseId.textContent = verse.id;
+        const occ = getOccurrenceInfo(index);
+        wordModeVerseId.textContent = verse.id + (occ ? ` (occurrence ${occ.position}/${occ.total})` : '');
+        // Avance directement l'audio au début du verset — pas besoin de
+        // rechercher la position à la main avant de marquer les mots.
+        audioPlayer.currentTime = verse.start;
+        updateTimeDisplay();
         wordModeSection.style.display = 'block';
         wordModeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
         renderWordMode();

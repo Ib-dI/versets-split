@@ -676,6 +676,21 @@ textarea:focus {
   cursor: not-allowed;
 }
 
+.seek-btn {
+  background: var(--success-color);
+  color: var(--white);
+}
+
+.seek-btn:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
+}
+
+.seek-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Notification */
 .notification {
   position: fixed;
