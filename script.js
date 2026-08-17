@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const correctWordBtn = document.getElementById('correctWordBtn');
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
+    const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
     const wordMarkedList = document.getElementById('wordMarkedList');
     const prevWordBtn = document.getElementById('prevWordBtn');
     const nextWordBtn = document.getElementById('nextWordBtn');
@@ -585,6 +586,26 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     closeWordModeBtn.addEventListener('click', closeWordMode);
+
+    // Passe directement au mode mots du prochain verset marquable (données
+    // de mots dispo + déjà borné), sans repasser par la liste principale.
+    function findNextWordableVerseIndex(fromIndex) {
+        for (let i = fromIndex + 1; i < verses.length; i++) {
+            const v = verses[i];
+            if (getWordList(v.id) && v.end !== null) return i;
+        }
+        return -1;
+    }
+
+    nextVerseWordsBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null) return;
+        const nextIndex = findNextWordableVerseIndex(wordModeVerseIndex);
+        if (nextIndex === -1) {
+            showNotification('Aucun verset suivant marquable après celui-ci');
+            return;
+        }
+        openWordMode(nextIndex);
+    });
 
     // Champ `words` au format TafsirAudioTiming.words de tafsir-app, prêt à
     // coller dans audios.ts. Absent tant qu'aucun mot n'a été marqué (les

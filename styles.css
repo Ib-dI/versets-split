@@ -694,12 +694,14 @@ textarea:focus {
   overflow-y: auto;
 }
 
-.words-btn {
+.words-btn,
+.next-verse-btn {
   background: var(--accent-color);
   color: var(--white);
 }
 
-.words-btn:hover:not(:disabled) {
+.words-btn:hover:not(:disabled),
+.next-verse-btn:hover:not(:disabled) {
   transform: scale(1.02);
   box-shadow: 0 4px 12px rgba(76, 201, 240, 0.3);
 }
