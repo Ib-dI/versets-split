@@ -1,3 +1,14 @@
+// Données mot par mot — pilote Al-Ikhlas (sourate 112). Verset -> mots
+// arabes, dans le même ordre/découpage que le mot par mot déjà affiché dans
+// tafsir-app (src/lib/data/quran-wbw/generated/112.json), sans le repère de
+// fin de verset (non prononcé, pas de timing à lui donner).
+const WORDS_BY_VERSE = {
+    1: ["قُلۡ", "هُوَ", "ٱللَّهُ", "أَحَدٌ"],
+    2: ["ٱللَّهُ", "ٱلصَّمَدُ"],
+    3: ["لَمۡ", "يَلِدۡ", "وَلَمۡ", "يُولَدۡ"],
+    4: ["وَلَمۡ", "يَكُن", "لَّهُۥ", "كُفُوًا", "أَحَدُۢ"],
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     const audioPlayer = document.getElementById('audioPlayer');
     const audioWrapper = document.getElementById('audioWrapper');
@@ -19,9 +30,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const playPauseBtn = document.getElementById('playPauseBtn');
     const playIcon = playPauseBtn.querySelector('.play-icon');
     const pauseIcon = playPauseBtn.querySelector('.pause-icon');
-    
+    const wordModeSection = document.getElementById('wordModeSection');
+    const wordModeVerseId = document.getElementById('wordModeVerseId');
+    const wordProgress = document.getElementById('wordProgress');
+    const wordCurrent = document.getElementById('wordCurrent');
+    const markWordBtn = document.getElementById('markWordBtn');
+    const undoWordBtn = document.getElementById('undoWordBtn');
+    const closeWordModeBtn = document.getElementById('closeWordModeBtn');
+    const wordMarkedList = document.getElementById('wordMarkedList');
+
     let verses = [];
     let updateTimer;
+    let wordModeVerseIndex = null;
     
     // Charger un fichier audio (clic ou changement input)
     let lastFile = null;
@@ -161,7 +181,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const time = audioPlayer.currentTime;
         const verseId = parseInt(verseIdInput.value) || 1;
-        verses.push({ id: verseId, start: time, end: null });
+        verses.push({ id: verseId, start: time, end: null, words: [] });
         updateVerseList();
         showNotification(`Début de verset ${verseId} marqué`);
         verseIdInput.value = verseId + 1;
@@ -222,16 +242,29 @@ document.addEventListener('DOMContentLoaded', function() {
             verseEntry.className = 'verse-entry';
             
             const verseText = document.createElement('span');
-            verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },`;
+            const wordList = WORDS_BY_VERSE[verse.id];
+            const wordsProgress = wordList ? ` — mots ${verse.words.length}/${wordList.length}` : '';
+            verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },${wordsProgress}`;
 
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'verse-actions';
+
+            const wordsBtn = document.createElement('button');
+            wordsBtn.className = 'words-btn verse-action-btn';
+            wordsBtn.textContent = 'Mots';
+            wordsBtn.disabled = !wordList || verse.end === null;
+            wordsBtn.title = !wordList
+                ? 'Pas de liste de mots pour ce verset (pilote Al-Ikhlas uniquement)'
+                : verse.end === null
+                    ? 'Marque d\'abord la fin du verset'
+                    : 'Marquer les mots de ce verset';
+            wordsBtn.addEventListener('click', () => openWordMode(index));
 
             const copyBtn = document.createElement('button');
             copyBtn.className = 'copy-btn verse-action-btn';
             copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
             copyBtn.addEventListener('click', () => {
-                const text = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },`;
+                const text = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'}${formatWordsField(verse)} },`;
                 navigator.clipboard.writeText(text)
                     .then(() => showNotification('Verset copié'))
                     .catch(err => console.error('Erreur de copie:', err));
@@ -244,6 +277,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 verses.splice(index, 1);
                 if (index > 0) {
                     verses[index - 1].end = null;
+                    // Le dernier mot du verset précédent était calé sur son
+                    // ancienne fin (voir markWordBtn) — devenue invalide.
+                    verses[index - 1].words = [];
+                }
+                if (wordModeVerseIndex === index) {
+                    closeWordMode();
                 }
                 const currentId = parseInt(verseIdInput.value) || 1;
                 verseIdInput.value = Math.max(1, currentId - 1);
@@ -251,6 +290,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 showNotification('Verset supprimé');
             });
             
+            actionsDiv.appendChild(wordsBtn);
             actionsDiv.appendChild(copyBtn);
             actionsDiv.appendChild(resetBtn);
             
@@ -260,15 +300,109 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Ouvre le mode mots pour un verset (déjà borné start+end).
+    function openWordMode(index) {
+        const verse = verses[index];
+        const wordList = WORDS_BY_VERSE[verse.id];
+        if (!wordList || verse.end === null) return;
+
+        wordModeVerseIndex = index;
+        wordModeVerseId.textContent = verse.id;
+        wordModeSection.style.display = 'block';
+        wordModeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        renderWordMode();
+    }
+
+    function closeWordMode() {
+        wordModeVerseIndex = null;
+        wordModeSection.style.display = 'none';
+    }
+
+    function renderWordMode() {
+        const verse = verses[wordModeVerseIndex];
+        const wordList = WORDS_BY_VERSE[verse.id];
+        const doneCount = verse.words.length;
+
+        if (doneCount >= wordList.length) {
+            wordProgress.textContent = `Verset ${verse.id} — tous les mots sont marqués`;
+            wordCurrent.textContent = '✓';
+            markWordBtn.disabled = true;
+        } else {
+            wordProgress.textContent = `Mot ${doneCount + 1} / ${wordList.length}`;
+            wordCurrent.textContent = wordList[doneCount];
+            markWordBtn.disabled = false;
+        }
+
+        wordMarkedList.innerHTML = verse.words
+            .map((w, i) => `${i + 1}. ${wordList[i]} — ${w.start.toFixed(2)} → ${w.end !== null ? w.end.toFixed(2) : '?'}`)
+            .join('<br>');
+    }
+
+    markWordBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || !audioPlayer.src) return;
+        const verse = verses[wordModeVerseIndex];
+        const wordList = WORDS_BY_VERSE[verse.id];
+        const time = audioPlayer.currentTime;
+        const doneCount = verse.words.length;
+        if (doneCount >= wordList.length) return;
+
+        // Le clic marque le début du mot en cours. Si un mot précédent est
+        // encore ouvert (pas de end), ce même instant en marque la fin —
+        // les mots d'un verset se suivent sans blanc entre eux.
+        if (doneCount > 0) {
+            verse.words[doneCount - 1].end = time;
+        }
+
+        if (doneCount === wordList.length - 1) {
+            // Dernier mot : sa fin est déjà connue, c'est la fin du verset.
+            verse.words.push({ start: time, end: verse.end });
+            showNotification(`Verset ${verse.id} : tous les mots sont marqués`);
+        } else {
+            verse.words.push({ start: time, end: null });
+        }
+
+        renderWordMode();
+        updateVerseList();
+    });
+
+    undoWordBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null) return;
+        const verse = verses[wordModeVerseIndex];
+        if (verse.words.length === 0) {
+            showNotification('Aucun mot à annuler');
+            return;
+        }
+        verse.words.pop();
+        if (verse.words.length > 0) {
+            verse.words[verse.words.length - 1].end = null;
+        }
+        renderWordMode();
+        updateVerseList();
+        showNotification('Dernier mot annulé');
+    });
+
+    closeWordModeBtn.addEventListener('click', closeWordMode);
+
+    // Champ `words` au format TafsirAudioTiming.words de tafsir-app, prêt à
+    // coller dans audios.ts. Absent tant qu'aucun mot n'a été marqué (les
+    // verset sans données de mots restent inchangés).
+    function formatWordsField(verse) {
+        if (!verse.words || verse.words.length === 0) return '';
+        const items = verse.words
+            .map((w) => `{ startTime: ${w.start.toFixed(2)}, endTime: ${w.end !== null ? w.end.toFixed(2) : '?'} }`)
+            .join(', ');
+        return `, words: [${items}]`;
+    }
+
     function formatVersesForCopy() {
-        return verses.map((verse) => 
-            `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },`
+        return verses.map((verse) =>
+            `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'}${formatWordsField(verse)} },`
         ).join('\n');
     }
-    
+
     function formatVersesForExport() {
-        return verses.map((verse) => 
-            `[{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },]`
+        return verses.map((verse) =>
+            `[{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'}${formatWordsField(verse)} },]`
         ).join('\n');
     }
     
