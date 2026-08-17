@@ -665,29 +665,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return false;
     }
 
-    // Si le marquage principal n'est pas encore terminé (le dernier mot
-    // marqué en séquence est encore ouvert, sa fin est `null` — le cheikh a
-    // fait une occurrence avant qu'on ait fini de marquer le verset), une
-    // nouvelle occurrence sur un AUTRE mot ferme automatiquement ce mot
-    // ouvert avec le début de cette occurrence. Distinct de
-    // shrinkLastWordEndIfNeeded, qui gère le cas où le dernier mot du
-    // verset est déjà clos (par défaut sur verse.end) — ici sa fin n'est
-    // pas encore posée du tout.
-    function closeOpenPrimaryOnNewOccurrence(verse, newOccurrenceWordIndex, startTime) {
-        if (verse.words.length === 0) return false;
-        const lastMarkedIndex = verse.words.length - 1;
-        if (lastMarkedIndex === newOccurrenceWordIndex) return false; // le mot ouvert lui-même n'informe rien sur sa propre fin
-
-        const lastMarkedPrimary = verse.words[lastMarkedIndex][0];
-        if (lastMarkedPrimary.end === null) {
-            lastMarkedPrimary.end = startTime;
-            showNotification(
-                `Mot ${lastMarkedIndex + 1} refermé à ${startTime.toFixed(2)}s (occurrence détectée avant la suite du marquage)`,
-            );
-            return true;
-        }
-        return false;
-    }
+    // NB : on ne ferme PAS automatiquement un mot principal encore ouvert
+    // (.end === null) quand une occurrence démarre ailleurs — contrairement
+    // au dernier mot du verset (shrinkLastWordEndIfNeeded, dont la fin par
+    // défaut est verse.end, une vraie limite de bloc), un mot en cours de
+    // marquage peut légitimement reprendre après une brève incise. Une
+    // fermeture automatique ici s'est révélée prématurée en pratique (elle
+    // se produisait avant que le mot ait fini d'être dit, obligeant à un
+    // contournement pour corriger ensuite). Le flux normal — marquer le mot
+    // suivant — referme correctement ce mot dès que l'utilisateur est prêt,
+    // sans avoir besoin de deviner à l'avance.
 
     toggleExtraOccurrenceBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
@@ -709,9 +696,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             verse.words[wordViewIndex].push({ start: time, end: null });
             activeExtraWordIndex = wordViewIndex;
-            const resolved =
-                closeOpenPrimaryOnNewOccurrence(verse, wordViewIndex, time) ||
-                shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
+            const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
             if (!resolved) {
                 showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
             }
@@ -738,9 +723,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wordViewIndex += 1;
         verse.words[wordViewIndex].push({ start: time, end: null });
         activeExtraWordIndex = wordViewIndex;
-        const resolved =
-            closeOpenPrimaryOnNewOccurrence(verse, wordViewIndex, time) ||
-            shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
+        const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
         if (!resolved) {
             showNotification('Occurrence enchaînée sur le mot suivant');
         }
