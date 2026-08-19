@@ -612,6 +612,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!primaryOpen) renderExtraOccurrences();
         }
 
+        // Chaque ligne est cliquable (pas seulement le numéro visuellement,
+        // toute la ligne pour une cible plus facile) : place directement
+        // wordViewIndex dessus, équivalent à cliquer ◀/▶ plusieurs fois mais
+        // en un clic — pour corriger un mot déjà marqué sans naviguer pas à
+        // pas depuis la position courante.
         wordMarkedList.innerHTML = verse.words
             .map((occurrences, i) => {
                 const primary = occurrences[0];
@@ -620,9 +625,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 // <bdi> isole le mot arabe : sans ça, Chrome réordonne
                 // visuellement toute la ligne (nombres et tiret compris)
                 // autour du texte RTL, même avec dir="ltr" sur le conteneur.
-                return `${i === wordViewIndex ? '→ ' : '　'}${i + 1}. <bdi>${wordList[i]}</bdi> — ${primary.start.toFixed(2)} → ${primary.end !== null ? primary.end.toFixed(2) : '?'}${extraSuffix}`;
+                return `<div class="word-marked-row${i === wordViewIndex ? ' active' : ''}" data-index="${i}" title="Revoir/corriger ce mot">${i === wordViewIndex ? '→ ' : '　'}${i + 1}. <bdi>${wordList[i]}</bdi> — ${primary.start.toFixed(2)} → ${primary.end !== null ? primary.end.toFixed(2) : '?'}${extraSuffix}</div>`;
             })
-            .join('<br>');
+            .join('');
+
+        wordMarkedList.querySelectorAll('.word-marked-row').forEach((row) => {
+            row.addEventListener('click', () => {
+                wordViewIndex = parseInt(row.dataset.index, 10);
+                renderWordMode();
+            });
+        });
     }
 
     // Occurrences supplémentaires : le cheikh peut redire un mot, ou une
@@ -664,9 +676,19 @@ document.addEventListener('DOMContentLoaded', function() {
             activeExtraWarning.style.display = 'none';
         }
 
+        // Glisser-déposer pour réordonner : utile quand une occurrence
+        // antérieure (chronologiquement) est ajoutée après coup — on avait
+        // oublié de la marquer sur le moment, elle arrive donc en dernier
+        // dans le tableau alors qu'elle devrait être plus tôt. Désactivé
+        // tant qu'une occurrence de CE mot est encore ouverte : le code de
+        // fermeture/enchaînement (toggleExtraOccurrenceBtn, advanceOccurrenceBtn)
+        // suppose que la dernière entrée du tableau est celle qui est
+        // ouverte — la déplacer casserait cette hypothèse.
+        const canReorder = activeExtraWordIndex !== wordViewIndex;
+
         extraOccurrencesList.innerHTML = extras.length === 0
             ? '<span style="color: var(--text-secondary); font-size: 13px;">Aucune occurrence supplémentaire</span>'
-            : extras.map((e, i) => `<span class="extra-occurrence-row">${i + 1}. ${e.start.toFixed(2)} → ${e.end !== null ? e.end.toFixed(2) : '…'}<button type="button" class="remove-extra-btn" data-extra-index="${i}" title="Supprimer">×</button></span>`).join('');
+            : extras.map((e, i) => `<span class="extra-occurrence-row" data-extra-index="${i}"${canReorder ? ' draggable="true" title="Glisser pour réordonner"' : ''}>${i + 1}. ${e.start.toFixed(2)} → ${e.end !== null ? e.end.toFixed(2) : '…'}<button type="button" class="remove-extra-btn" data-extra-index="${i}" title="Supprimer">×</button></span>`).join('');
 
         extraOccurrencesList.querySelectorAll('.remove-extra-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -680,6 +702,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateVerseList();
             });
         });
+
+        if (canReorder) {
+            let dragSrcIndex = null;
+            const rows = extraOccurrencesList.querySelectorAll('.extra-occurrence-row');
+            rows.forEach((row) => {
+                row.addEventListener('dragstart', () => {
+                    dragSrcIndex = parseInt(row.dataset.extraIndex, 10);
+                    row.classList.add('dragging');
+                });
+                row.addEventListener('dragend', () => {
+                    row.classList.remove('dragging');
+                    rows.forEach((r) => r.classList.remove('drag-over'));
+                });
+                row.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    row.classList.add('drag-over');
+                });
+                row.addEventListener('dragleave', () => {
+                    row.classList.remove('drag-over');
+                });
+                row.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    row.classList.remove('drag-over');
+                    const targetIndex = parseInt(row.dataset.extraIndex, 10);
+                    if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
+                    // +1 : l'index 0 des occurrences est la principale, les
+                    // occurrences supplémentaires commencent à 1.
+                    const moved = occurrences.splice(dragSrcIndex + 1, 1)[0];
+                    occurrences.splice(targetIndex + 1, 0, moved);
+                    dragSrcIndex = null;
+                    renderWordMode();
+                    updateVerseList();
+                    showNotification('Occurrences réordonnées');
+                });
+            });
+        }
     }
 
     // Le dernier mot d'un verset a sa fin calée sur `verse.end` par défaut
