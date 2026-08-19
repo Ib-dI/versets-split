@@ -397,6 +397,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return { position, total: sameId.length };
     }
 
+    let dragSrcVerse = null;
+
     function updateVerseList() {
         verseList.innerHTML = '';
 
@@ -579,9 +581,56 @@ document.addEventListener('DOMContentLoaded', function() {
             actionsDiv.appendChild(wordsBtn);
             actionsDiv.appendChild(copyBtn);
             actionsDiv.appendChild(resetBtn);
-            
+
             verseEntry.appendChild(verseText);
             verseEntry.appendChild(actionsDiv);
+
+            // Glisser-déposer pour réordonner : utile quand un verset oublié
+            // est marqué après coup et arrive en dernier dans le tableau
+            // alors qu'il devrait être plus tôt (l'ordre compte pour
+            // resetBtn — qui referme le verset PRÉCÉDENT dans le tableau —
+            // et pour "Verset suivant" en mode mots). Désactivé pendant que
+            // le mode mots est ouvert (pour ne pas désynchroniser
+            // wordModeVerseIndex) et sur le verset encore en cours
+            // (end === null) : "Fin verset" cible toujours le dernier élément
+            // du tableau, le déplacer casserait cette hypothèse.
+            const canReorderVerse = wordModeVerseIndex === null && verse.end !== null;
+            if (canReorderVerse) {
+                verseEntry.draggable = true;
+                verseEntry.title = 'Glisser pour réordonner';
+                verseEntry.addEventListener('dragstart', () => {
+                    dragSrcVerse = verse;
+                    verseEntry.classList.add('dragging');
+                });
+                verseEntry.addEventListener('dragend', () => {
+                    verseEntry.classList.remove('dragging');
+                    verseList.querySelectorAll('.verse-entry').forEach((r) => r.classList.remove('drag-over'));
+                });
+                verseEntry.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    verseEntry.classList.add('drag-over');
+                });
+                verseEntry.addEventListener('dragleave', () => {
+                    verseEntry.classList.remove('drag-over');
+                });
+                verseEntry.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    verseEntry.classList.remove('drag-over');
+                    if (dragSrcVerse === null || dragSrcVerse === verse) return;
+                    // Identité d'objet plutôt qu'index figé au rendu : après
+                    // avoir retiré la source, l'index de la cible peut avoir
+                    // changé — le recalculer garantit une insertion juste
+                    // avant la cible dans les deux sens.
+                    const srcIndex = verses.indexOf(dragSrcVerse);
+                    verses.splice(srcIndex, 1);
+                    const targetIndex = verses.indexOf(verse);
+                    verses.splice(targetIndex, 0, dragSrcVerse);
+                    dragSrcVerse = null;
+                    updateVerseList();
+                    showNotification('Versets réordonnés');
+                });
+            }
+
             verseList.appendChild(verseEntry);
         });
     }
@@ -609,6 +658,11 @@ document.addEventListener('DOMContentLoaded', function() {
         verseMarkingLocked = true;
         renderVerseLock();
         renderWordMode();
+        // Réordonner la liste des versets est désactivé tant que le mode
+        // mots est ouvert (voir canReorderVerse dans updateVerseList) — sans
+        // ce ré-affichage, les lignes gardaient leur ancien état draggable
+        // jusqu'au prochain rendu fortuit (ex. marquer un mot).
+        updateVerseList();
     }
 
     function closeWordMode() {
@@ -617,6 +671,7 @@ document.addEventListener('DOMContentLoaded', function() {
         verseMarkingLocked = false;
         activeExtraWordIndex = null;
         renderVerseLock();
+        updateVerseList();
     }
 
     // Vrai si une occurrence supplémentaire est en cours (démarrée, pas
@@ -808,11 +863,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         if (canReorder) {
-            let dragSrcIndex = null;
+            let dragSrcOccurrence = null;
             const rows = extraOccurrencesList.querySelectorAll('.extra-occurrence-row');
-            rows.forEach((row) => {
+            rows.forEach((row, i) => {
+                const targetOccurrence = extras[i];
                 row.addEventListener('dragstart', () => {
-                    dragSrcIndex = parseInt(row.dataset.extraIndex, 10);
+                    dragSrcOccurrence = targetOccurrence;
                     row.classList.add('dragging');
                 });
                 row.addEventListener('dragend', () => {
@@ -829,13 +885,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 row.addEventListener('drop', (e) => {
                     e.preventDefault();
                     row.classList.remove('drag-over');
-                    const targetIndex = parseInt(row.dataset.extraIndex, 10);
-                    if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
-                    // +1 : l'index 0 des occurrences est la principale, les
-                    // occurrences supplémentaires commencent à 1.
-                    const moved = occurrences.splice(dragSrcIndex + 1, 1)[0];
-                    occurrences.splice(targetIndex + 1, 0, moved);
-                    dragSrcIndex = null;
+                    if (dragSrcOccurrence === null || dragSrcOccurrence === targetOccurrence) return;
+                    // Identité d'objet plutôt qu'index figé au rendu : après
+                    // avoir retiré la source, l'index de la cible peut avoir
+                    // changé (glisser un élément plus tôt vers un plus tard) —
+                    // le recalculer garantit une insertion juste avant la
+                    // cible dans les deux sens, pas seulement en arrière.
+                    const srcIndex = occurrences.indexOf(dragSrcOccurrence);
+                    occurrences.splice(srcIndex, 1);
+                    const targetIndex = occurrences.indexOf(targetOccurrence);
+                    occurrences.splice(targetIndex, 0, dragSrcOccurrence);
+                    dragSrcOccurrence = null;
                     renderWordMode();
                     updateVerseList();
                     showNotification('Occurrences réordonnées');

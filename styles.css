@@ -516,6 +516,19 @@ button:disabled:hover {
   background: rgba(60, 60, 60, 1);
 }
 
+.verse-entry[draggable="true"] {
+  cursor: grab;
+}
+
+.verse-entry.dragging {
+  opacity: 0.4;
+}
+
+.verse-entry.drag-over {
+  outline: 2px dashed var(--primary-color);
+  outline-offset: -2px;
+}
+
 .verse-entry span {
   font-family: var(--font-mono);
   font-size: 14px;
