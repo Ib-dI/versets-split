@@ -689,11 +689,39 @@ textarea:focus {
   text-align: center;
 }
 
+.word-mode-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: var(--padding-sm);
+}
+
 .word-mode-section h3 {
   color: var(--text-color);
   font-size: 1.25rem;
   font-weight: 600;
-  margin-bottom: var(--padding-sm);
+  margin-bottom: 0;
+}
+
+/* Action de niveau VERSET (pas mot) — volontairement plus discrète que les
+   gros boutons d'action de word-mode-actions : c'est une action occasionnelle
+   (le verset se répète), pas une étape du flux principal de marquage. */
+.add-verse-occurrence-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--success-color);
+  box-shadow: none;
+}
+
+.add-verse-occurrence-btn:hover {
+  background: rgba(52, 199, 89, 0.22);
+  transform: none;
+  box-shadow: none;
 }
 
 .word-progress {
