@@ -598,12 +598,14 @@ document.addEventListener('DOMContentLoaded', function() {
             // est marqué après coup et arrive en dernier dans le tableau
             // alors qu'il devrait être plus tôt (l'ordre compte pour
             // resetBtn — qui referme le verset PRÉCÉDENT dans le tableau —
-            // et pour "Verset suivant" en mode mots). Désactivé pendant que
-            // le mode mots est ouvert (pour ne pas désynchroniser
-            // wordModeVerseIndex) et sur le verset encore en cours
-            // (end === null) : "Fin verset" cible toujours le dernier élément
-            // du tableau, le déplacer casserait cette hypothèse.
-            const canReorderVerse = wordModeVerseIndex === null && verse.end !== null;
+            // et pour "Verset suivant" en mode mots). Autorisé même pendant
+            // que le mode mots est ouvert : wordModeVerseIndex et
+            // pendingVerseOccurrenceIndex sont resynchronisés par identité
+            // après coup (voir le handler drop) plutôt que bloqués. Désactivé
+            // uniquement sur le verset encore en cours (end === null) : "Fin
+            // verset" cible toujours le dernier élément du tableau, le
+            // déplacer casserait cette hypothèse.
+            const canReorderVerse = verse.end !== null;
             if (canReorderVerse) {
                 verseEntry.draggable = true;
                 verseEntry.title = 'Glisser pour réordonner';
@@ -626,6 +628,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     e.preventDefault();
                     verseEntry.classList.remove('drag-over');
                     if (dragSrcVerse === null || dragSrcVerse === verse) return;
+
+                    // Capturés par identité avant le remaniement, pour
+                    // resynchroniser les index numériques après coup — le
+                    // mode mots (et une éventuelle occurrence de verset en
+                    // cours d'ajout) ne doit pas se retrouver à pointer sur
+                    // le mauvais verset après un réordonnancement.
+                    const wordModeVerse = wordModeVerseIndex !== null ? verses[wordModeVerseIndex] : null;
+                    const pendingVerse = pendingVerseOccurrenceIndex !== null ? verses[pendingVerseOccurrenceIndex] : null;
+
                     // Identité d'objet plutôt qu'index figé au rendu : après
                     // avoir retiré la source, l'index de la cible peut avoir
                     // changé — le recalculer garantit une insertion juste
@@ -635,6 +646,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     const targetIndex = verses.indexOf(verse);
                     verses.splice(targetIndex, 0, dragSrcVerse);
                     dragSrcVerse = null;
+
+                    if (wordModeVerse !== null) wordModeVerseIndex = verses.indexOf(wordModeVerse);
+                    if (pendingVerse !== null) pendingVerseOccurrenceIndex = verses.indexOf(pendingVerse);
+
                     updateVerseList();
                     showNotification('Versets réordonnés');
                 });
