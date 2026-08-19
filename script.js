@@ -846,6 +846,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderWordMode();
             });
         });
+
+        // Garde le mot le plus pertinent toujours visible — sans ça, une
+        // fois la liste plus haute que les 120px de la zone scrollable, il
+        // faut scroller à la main pour le revoir. Deux cas : un mot déjà
+        // marqué est en cours de relecture (.active présent, ex. après
+        // ◀/▶/clic sur une ligne) ; ou on vient de marquer le dernier mot et
+        // wordViewIndex pointe sur l'emplacement "à marquer" suivant, qui
+        // n'existe pas encore dans cette liste — dans ce cas c'est la
+        // DERNIÈRE ligne (le mot qu'on vient de finir) qu'on veut garder
+        // visible.
+        const activeRow = wordMarkedList.querySelector('.word-marked-row.active');
+        const rowToShow = activeRow || wordMarkedList.lastElementChild;
+        if (rowToShow) {
+            rowToShow.scrollIntoView({ block: 'nearest' });
+        }
     }
 
     // Occurrences supplémentaires : le cheikh peut redire un mot, ou une
