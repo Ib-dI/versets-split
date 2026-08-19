@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
+    const addVerseOccurrenceBtn = document.getElementById('addVerseOccurrenceBtn');
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
     const extraOccurrencesList = document.getElementById('extraOccurrencesList');
     const toggleExtraOccurrenceBtn = document.getElementById('toggleExtraOccurrenceBtn');
@@ -60,6 +61,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // mot suivant en navigant, comme le marquage principal. Remis à zéro
     // à chaque ouverture/fermeture du mode mots.
     let activeExtraWordIndex = null;
+    // Index (dans `verses`) d'une nouvelle occurrence du verset en cours de
+    // mots, ajoutée depuis le panneau mots sans quitter le mode mots (le
+    // verset se répète plus loin dans l'audio) — start posé, end pas encore.
+    // null si aucune n'est en cours. Contourne verseMarkingLocked
+    // délibérément : cette action n'ajoute qu'une entrée en fin de tableau,
+    // elle ne touche jamais verses[wordModeVerseIndex], donc rien à protéger
+    // d'un clic réflexe ici (contrairement à Début/Fin verset globaux).
+    let pendingVerseOccurrenceIndex = null;
 
     // Verrous anti-clic-réflexe : Début/Fin verset et Marquer ce mot sont
     // des habitudes de clic — utiles quand on marque activement, gênants
@@ -644,6 +653,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wordModeVerseIndex = index;
         wordViewIndex = verse.words.length;
         activeExtraWordIndex = null;
+        pendingVerseOccurrenceIndex = null;
         const occ = getOccurrenceInfo(index);
         wordModeVerseId.textContent = verse.id + (occ ? ` (occurrence ${occ.position}/${occ.total})` : '');
         // Avance directement l'audio au début du verset — pas besoin de
@@ -670,6 +680,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wordModeSection.style.display = 'none';
         verseMarkingLocked = false;
         activeExtraWordIndex = null;
+        pendingVerseOccurrenceIndex = null;
         renderVerseLock();
         updateVerseList();
     }
@@ -688,6 +699,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!hasOpenExtraOccurrence()) return true;
         return window.confirm(
             `Une occurrence supplémentaire est encore ouverte sur le mot ${activeExtraWordIndex + 1} ` +
+            '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
+        );
+    }
+
+    // Même garde-fou que hasOpenExtraOccurrence/confirmLeavingOpenExtraOccurrence,
+    // pour la nouvelle occurrence de VERSET (pas de mot) ajoutée depuis le
+    // panneau mots — voir addVerseOccurrenceBtn plus bas.
+    function hasOpenVerseOccurrence() {
+        return pendingVerseOccurrenceIndex !== null;
+    }
+
+    function confirmLeavingOpenVerseOccurrence() {
+        if (!hasOpenVerseOccurrence()) return true;
+        const start = verses[pendingVerseOccurrenceIndex].start;
+        return window.confirm(
+            `Une nouvelle occurrence de ce verset est encore ouverte depuis ${start.toFixed(2)}s ` +
             '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
         );
     }
@@ -741,6 +768,16 @@ document.addEventListener('DOMContentLoaded', function() {
             ? `Mot ${wordViewIndex + 1} / ${total} — à marquer`
             : `Mot ${wordViewIndex + 1} / ${total}` + (doneCount >= total ? ' — tous les mots sont marqués' : ' (déjà marqué)');
         renderWordCarousel(wordList, wordViewIndex);
+
+        // Marquer une nouvelle occurrence de CE verset (pas d'un mot) sans
+        // quitter le mode mots — contourne délibérément verseMarkingLocked,
+        // voir la note sur pendingVerseOccurrenceIndex plus haut.
+        addVerseOccurrenceBtn.textContent = hasOpenVerseOccurrence()
+            ? 'Terminer cette occurrence de verset ici'
+            : '+ Occurrence de ce verset ici';
+        addVerseOccurrenceBtn.title = hasOpenVerseOccurrence()
+            ? 'Marque la fin de cette nouvelle occurrence à la position audio actuelle'
+            : 'Le verset répète plus loin dans l\'audio : marque cette nouvelle occurrence sans quitter le mode mots';
 
         if (isPendingSlot) {
             markWordBtn.style.display = '';
@@ -1002,6 +1039,37 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification(`Mot ${wordViewIndex + 1} terminé à ${time.toFixed(2)}s`);
     });
 
+    // Marque une nouvelle occurrence du VERSET en cours (pas d'un mot) —
+    // le cheikh répète le verset entier plus loin dans le même passage.
+    // Contourne délibérément verseMarkingLocked : n'ajoute qu'une entrée en
+    // fin de tableau `verses`, ne touche jamais verses[wordModeVerseIndex],
+    // donc aucun risque pour le verset dont on marque les mots.
+    addVerseOccurrenceBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || !audioPlayer.src) return;
+        const time = audioPlayer.currentTime;
+
+        if (pendingVerseOccurrenceIndex !== null) {
+            const pending = verses[pendingVerseOccurrenceIndex];
+            if (time <= pending.start) {
+                showNotification('La fin doit être après le début de cette occurrence');
+                return;
+            }
+            pending.end = time;
+            showNotification(`Occurrence du verset ${pending.id} terminée à ${time.toFixed(2)}s`);
+            pendingVerseOccurrenceIndex = null;
+            renderWordMode();
+            updateVerseList();
+            return;
+        }
+
+        const verse = verses[wordModeVerseIndex];
+        verses.push({ id: verse.id, start: time, end: null, words: [] });
+        pendingVerseOccurrenceIndex = verses.length - 1;
+        showNotification(`Nouvelle occurrence du verset ${verse.id} démarrée à ${time.toFixed(2)}s`);
+        renderWordMode();
+        updateVerseList();
+    });
+
     // Ferme l'occurrence ouverte sur le mot courant ET en ouvre une sur le
     // mot suivant, au même instant — un seul clic pour enchaîner une
     // phrase répétée, sans passer par les flèches ▶ entre chaque mot.
@@ -1123,6 +1191,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     closeWordModeBtn.addEventListener('click', function() {
         if (!confirmLeavingOpenExtraOccurrence()) return;
+        if (!confirmLeavingOpenVerseOccurrence()) return;
         closeWordMode();
     });
 
@@ -1139,6 +1208,7 @@ document.addEventListener('DOMContentLoaded', function() {
     nextVerseWordsBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null) return;
         if (!confirmLeavingOpenExtraOccurrence()) return;
+        if (!confirmLeavingOpenVerseOccurrence()) return;
         const nextIndex = findNextWordableVerseIndex(wordModeVerseIndex);
         if (nextIndex === -1) {
             showNotification('Aucun verset suivant marquable après celui-ci');
