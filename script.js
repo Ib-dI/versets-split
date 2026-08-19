@@ -414,7 +414,111 @@ document.addEventListener('DOMContentLoaded', function() {
             const wordsProgress = wordList ? ` — mots ${verse.words.length}/${wordList.length}` : '';
             const occ = getOccurrenceInfo(index);
             const occSuffix = occ ? ` (occurrence ${occ.position}/${occ.total})` : '';
-            verseText.textContent = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'} },${wordsProgress}${occSuffix}`;
+
+            // startTime/endTime déjà enregistrés sont modifiables directement :
+            // cliquer dessus ouvre un champ — saisir une valeur au clavier ET
+            // Entrée, ou le bouton ⏱ pour reprendre la position audio
+            // actuelle — sans passer par supprimer-et-refaire (qui en plus
+            // efface la fin du verset précédent). Si des mots sont déjà
+            // marqués, ils dépendent de l'ancienne limite (le dernier mot est
+            // calé sur l'ancien verse.end par valeur, pas par référence) — on
+            // les réinitialise pour ne pas laisser une incohérence
+            // silencieuse, même logique que resetBtn plus bas.
+            function commitTimeEdit(field, label, time) {
+                verse[field] = time;
+                const hadWords = verse.words.length > 0;
+                if (hadWords) verse.words = [];
+                if (wordModeVerseIndex === index) closeWordMode();
+                showNotification(
+                    `${label} du verset ${verse.id} réglée à ${time.toFixed(2)}s` +
+                    (hadWords ? ' — mots réinitialisés (dépendaient de l\'ancienne limite)' : ''),
+                );
+                updateVerseList();
+            }
+
+            function makeEditableTime(field, label) {
+                const span = document.createElement('span');
+                span.className = 'editable-time';
+                span.textContent = verse[field] !== null && verse[field] !== undefined
+                    ? verse[field].toFixed(2)
+                    : '?';
+                span.title = 'Cliquer pour saisir une valeur ou reprendre la position audio actuelle';
+                span.addEventListener('click', (e) => {
+                    e.stopPropagation();
+
+                    const wrapper = document.createElement('span');
+                    wrapper.className = 'editable-time-editing';
+
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.step = '0.01';
+                    input.min = '0';
+                    input.className = 'editable-time-input';
+                    input.value = verse[field] !== null && verse[field] !== undefined
+                        ? verse[field].toFixed(2)
+                        : '';
+
+                    const nowBtn = document.createElement('button');
+                    nowBtn.type = 'button';
+                    nowBtn.className = 'editable-time-now-btn';
+                    nowBtn.textContent = '⏱';
+                    nowBtn.title = 'Remplir avec la position audio actuelle';
+                    // Empêche le mousedown de voler le focus du champ (donc
+                    // d'en déclencher le blur) avant que le clic ne s'exécute.
+                    nowBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
+                    nowBtn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        if (!audioPlayer.src) {
+                            showNotification('Charge d\'abord un fichier audio');
+                            return;
+                        }
+                        input.value = audioPlayer.currentTime.toFixed(2);
+                        input.focus();
+                    });
+
+                    let settled = false;
+                    function commit() {
+                        if (settled) return;
+                        settled = true;
+                        const value = parseFloat(input.value);
+                        if (Number.isNaN(value) || value < 0) {
+                            showNotification('Valeur invalide — modification annulée');
+                            updateVerseList();
+                            return;
+                        }
+                        commitTimeEdit(field, label, value);
+                    }
+                    function cancel() {
+                        if (settled) return;
+                        settled = true;
+                        updateVerseList();
+                    }
+
+                    input.addEventListener('keydown', (ev) => {
+                        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+                        else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+                    });
+                    input.addEventListener('blur', () => {
+                        setTimeout(() => {
+                            if (document.activeElement !== input) commit();
+                        }, 0);
+                    });
+                    input.addEventListener('click', (ev) => ev.stopPropagation());
+
+                    wrapper.appendChild(input);
+                    wrapper.appendChild(nowBtn);
+                    span.replaceWith(wrapper);
+                    input.focus();
+                    input.select();
+                });
+                return span;
+            }
+
+            verseText.appendChild(document.createTextNode(`{ id: ${verse.id}, startTime: `));
+            verseText.appendChild(makeEditableTime('start', 'Début'));
+            verseText.appendChild(document.createTextNode(', endTime: '));
+            verseText.appendChild(makeEditableTime('end', 'Fin'));
+            verseText.appendChild(document.createTextNode(` },${wordsProgress}${occSuffix}`));
 
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'verse-actions';

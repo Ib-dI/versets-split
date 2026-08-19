@@ -522,6 +522,55 @@ button:disabled:hover {
   color: var(--text-color);
 }
 
+.editable-time {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 3px;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-secondary);
+  text-underline-offset: 2px;
+}
+
+.editable-time:hover {
+  background: rgba(67, 97, 238, 0.12);
+  color: var(--primary-color);
+  text-decoration-color: var(--primary-color);
+}
+
+.editable-time-editing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.editable-time-input {
+  width: 72px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 1px 4px;
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  background: var(--card-bg-color);
+  color: var(--text-color);
+}
+
+.editable-time-now-btn {
+  padding: 0 6px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 4px;
+  background: rgba(67, 97, 238, 0.12);
+  color: var(--primary-color);
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.editable-time-now-btn:hover {
+  transform: none;
+  background: rgba(67, 97, 238, 0.22);
+}
+
 .verse-actions {
   display: flex;
   gap: 8px;
