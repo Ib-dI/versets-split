@@ -555,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function() {
             copyBtn.className = 'copy-btn verse-action-btn';
             copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
             copyBtn.addEventListener('click', () => {
-                const text = `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'}${formatWordsField(verse)} },`;
+                const text = `${formatVerseObject(verse)},`;
                 navigator.clipboard.writeText(text)
                     .then(() => showNotification('Verset copié'))
                     .catch(err => console.error('Erreur de copie:', err));
@@ -1120,16 +1120,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return `, words: [${items}]`;
     }
 
+    // Fragment `{ id, startTime, endTime, words? }` d'un verset, sans
+    // virgule finale ni emballage — copyBtn, formatVersesForCopy et
+    // formatVersesForExport l'utilisent chacun avec leur propre ponctuation
+    // autour. `!== null` (pas une simple vérité) : un endTime de 0.00s est
+    // une valeur légitime, pas une absence — voir makeEditableTime plus
+    // haut, qui fait déjà ce test correctement.
+    function formatVerseObject(verse) {
+        const endTime = verse.end !== null ? verse.end.toFixed(2) : '?';
+        return `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${endTime}${formatWordsField(verse)} }`;
+    }
+
     function formatVersesForCopy() {
-        return verses.map((verse) =>
-            `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'}${formatWordsField(verse)} },`
-        ).join('\n');
+        return verses.map((verse) => `${formatVerseObject(verse)},`).join('\n');
     }
 
     function formatVersesForExport() {
-        return verses.map((verse) =>
-            `[{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${verse.end ? verse.end.toFixed(2)+'' : '?'}${formatWordsField(verse)} },]`
-        ).join('\n');
+        return verses.map((verse) => `[${formatVerseObject(verse)},]`).join('\n');
     }
     
     function showNotification(message) {
