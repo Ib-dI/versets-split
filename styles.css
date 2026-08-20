@@ -705,10 +705,14 @@ textarea:focus {
   margin-bottom: 0;
 }
 
-/* Action de niveau VERSET (pas mot) — volontairement plus discrète que les
-   gros boutons d'action de word-mode-actions : c'est une action occasionnelle
-   (le verset se répète), pas une étape du flux principal de marquage. */
-.add-verse-occurrence-btn {
+/* Actions occasionnelles liées à l'en-tête du panneau mots (occurrence de
+   verset, seek au verset suivant) — volontairement plus discrètes que les
+   gros boutons d'action de word-mode-actions : ce ne sont pas des étapes du
+   flux principal de marquage. */
+.header-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -718,10 +722,15 @@ textarea:focus {
   box-shadow: none;
 }
 
-.add-verse-occurrence-btn:hover {
+.header-action-btn:hover:not(:disabled) {
   background: rgba(52, 199, 89, 0.22);
   transform: none;
   box-shadow: none;
+}
+
+.header-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .word-progress {

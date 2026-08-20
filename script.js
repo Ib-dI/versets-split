@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
+    const seekNextVerseWordsBtn = document.getElementById('seekNextVerseWordsBtn');
     const addVerseOccurrenceBtn = document.getElementById('addVerseOccurrenceBtn');
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
     const extraOccurrencesList = document.getElementById('extraOccurrencesList');
@@ -778,6 +779,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         prevWordBtn.disabled = wordViewIndex <= 0;
         nextWordBtn.disabled = wordViewIndex >= maxIndex;
+        seekNextVerseWordsBtn.disabled = !audioPlayer.src || wordModeVerseIndex + 1 >= verses.length;
 
         wordProgress.textContent = isPendingSlot
             ? `Mot ${wordViewIndex + 1} / ${total} — à marquer`
@@ -1234,6 +1236,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         return -1;
     }
+
+    // Avance l'audio au début du verset suivant sans changer le verset
+    // ouvert dans le panneau mots — utile pour repérer où il commence
+    // (ex. pour caler la fin du dernier mot) sans perdre le contexte de
+    // marquage en cours (contrairement à "Verset suivant" qui bascule dessus).
+    seekNextVerseWordsBtn.addEventListener('click', function() {
+        if (wordModeVerseIndex === null || !audioPlayer.src) return;
+        const nextVerse = verses[wordModeVerseIndex + 1];
+        if (!nextVerse) {
+            showNotification('Aucun verset suivant');
+            return;
+        }
+        audioPlayer.currentTime = nextVerse.start;
+        updateTimeDisplay();
+        showNotification(`Audio avancé à ${nextVerse.start.toFixed(2)}s (verset ${nextVerse.id})`);
+    });
 
     nextVerseWordsBtn.addEventListener('click', function() {
         if (wordModeVerseIndex === null) return;
