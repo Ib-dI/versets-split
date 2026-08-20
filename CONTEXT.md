@@ -48,20 +48,46 @@ précédent).
 
 ## Collaborateur verses (verse collaborator)
 
-Dépendance injectée dans `WordMarkingSession` (voir
-`createArrayVerseCollaborator` dans `word-marking-session.js`) : le petit
-ensemble d'opérations sur `verses[]` dont la session a besoin
-(`getVerse`, `indexOf`, `appendVerseOccurrence`, `getOccurrenceInfo`),
-sans jamais toucher au tableau brut elle-même. Aujourd'hui c'est un fin
-wrapper autour du tableau `verses` de `script.js` ; le jour où
-**[[VerseTimeline]]** existe, il remplace ce wrapper sans que
-`WordMarkingSession` change.
+Interface que `WordMarkingSession` attend de son injection `verses`
+(`getVerse`, `getVerseCount`, `indexOf`, `appendVerseOccurrence`,
+`getOccurrenceInfo`) — sans jamais toucher au tableau brut elle-même.
+Satisfaite aujourd'hui par une instance de **[[VerseTimeline]]** passée
+directement au constructeur ; `word-marking-session.js` n'a jamais eu à
+changer une ligne quand VerseTimeline a remplacé le fin wrapper
+(`createArrayVerseCollaborator`) qui jouait ce rôle avant.
 
-## VerseTimeline *(pas encore construit)*
+## VerseTimeline
 
-Candidat identifié par la revue d'architecture du 2026-08-20 mais non
-implémenté : un module profond qui possèderait `verses[]` et absorberait
-les opérations aujourd'hui dispersées dans `script.js` (suppression avec
-cascade sur le verset précédent, édition de borne avec invalidation des
-mots dépendants, réordonnancement par glisser-déposer, sérialisation).
-Voir le rapport de revue pour le détail.
+Module profond (`verse-timeline.js`) qui possède tout le tableau
+`verses[]` : plus aucune mutation (push/splice) n'a lieu ailleurs dans
+`script.js`. Absorbe la création (`startVerse`, `endVerse`,
+`appendVerseOccurrence`), la suppression avec cascade sur le verset
+précédent (`deleteVerse`), l'édition de borne avec invalidation des mots
+dépendants (`setBoundary`), le réordonnancement par glisser-déposer
+(`reorder`, `canReorder`) et la sérialisation (`serializeVerse`).
+
+Le tableau reste lisible depuis l'extérieur via `getVerses()` (même
+référence, mutée en interne) : le rendu de la liste des versets continue
+d'itérer dessus directement (`.forEach`/`.length`) — il a besoin de voir
+chaque champ de chaque verset de toute façon. La profondeur de ce module
+porte sur les mutations, pas sur le fait de cacher le tableau au rendu.
+Dans `script.js`, `verses` est un `const` lié à `verseTimeline.getVerses()` :
+la liaison elle-même interdit toute réaffectation, donc toute mutation
+passe forcément par `verseTimeline`.
+
+Née de la revue d'architecture du 2026-08-20 (candidat "VerseTimeline").
+Dernier des 4 candidats de cette revue à être traité — voir aussi
+[[WordMarkingSession]] et **timeSource** ci-dessous.
+
+## timeSource
+
+Petit objet local dans `script.js` (`now()`, `isReady()`, `seek(time)`) —
+seul point de contact avec `audioPlayer.currentTime`/`.src`. Remplace 13+
+lectures/écritures DOM dispersées et identiques. Ce n'est délibérément
+**pas** un port injecté façon `WordMarkingSession`/collaborateur : aucun
+consommateur actuel n'a besoin d'un faux adaptateur en test
+(`WordMarkingSession` reçoit déjà `time` en paramètre plutôt que
+`timeSource` lui-même), donc un simple objet suffit — inutile d'ajouter
+une cérémonie d'injection de dépendance pour un seul appelant.
+`.duration`/`.paused`/`.play()` restent hors périmètre, en accès DOM
+direct.

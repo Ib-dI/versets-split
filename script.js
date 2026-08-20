@@ -2,10 +2,21 @@
 // (data/existing-timings.js) sont générées depuis tafsir-app — voir ces
 // fichiers pour leur origine. Chargées comme <script> avant celui-ci.
 
-import { WordMarkingSession, createArrayVerseCollaborator } from './word-marking-session.js';
+import { WordMarkingSession } from './word-marking-session.js';
+import { VerseTimeline } from './verse-timeline.js';
 
 document.addEventListener('DOMContentLoaded', function() {
     const audioPlayer = document.getElementById('audioPlayer');
+    // Seul point de contact avec la position de lecture de <audio> — élimine
+    // les lectures/écritures directes de audioPlayer.currentTime/.src
+    // dispersées dans les handlers (13 vérifications "audio chargé ?"
+    // identiques avant ce regroupement). .duration/.paused/.play() restent
+    // des accès DOM directs, hors périmètre.
+    const timeSource = {
+        now: () => audioPlayer.currentTime,
+        isReady: () => Boolean(audioPlayer.src),
+        seek: (time) => { audioPlayer.currentTime = time; },
+    };
     const audioWrapper = document.getElementById('audioWrapper');
     const currentTimeDisplay = document.getElementById('currentTime');
     const startVerseBtn = document.getElementById('startVerse');
@@ -52,21 +63,25 @@ document.addEventListener('DOMContentLoaded', function() {
     const toggleVerseLockBtn = document.getElementById('toggleVerseLock');
     const toggleWordLockBtn = document.getElementById('toggleWordLock');
 
-    let verses = [];
     let updateTimer;
 
-    // Collaborateur temporaire autour du tableau `verses` — voir
-    // word-marking-session.js pour l'interface attendue. Le jour où
-    // VerseTimeline existe, il remplace ce wrapper sans toucher
-    // WordMarkingSession ni le câblage ci-dessous.
-    const verseCollaborator = createArrayVerseCollaborator(() => verses);
+    // Possède tout le tableau verses[] : plus aucune mutation (push/splice)
+    // n'a lieu ailleurs dans ce fichier — voir verse-timeline.js pour les
+    // invariants de cascade qu'elle applique elle-même désormais (supprimer
+    // ou éditer un verset invalide les mots qui dépendaient de son ancienne
+    // forme). `verses` reste une référence en lecture vers le même tableau
+    // (getVerses()) — le rendu de la liste en a besoin pour tout afficher,
+    // seules les mutations passent par verseTimeline.
+    const verseTimeline = new VerseTimeline();
+    const verses = verseTimeline.getVerses();
     // Possède tout l'état du mode mots (verset en cours, mot affiché,
     // occurrences supplémentaires, occurrence de verset en attente, verrou
     // anti-clic-réflexe) — voir word-marking-session.js pour les invariants
     // qu'elle applique elle-même désormais (ex. impossible d'ouvrir un
     // verset en écrasant silencieusement une occurrence encore ouverte,
-    // quel que soit le point d'entrée).
-    const wordSession = new WordMarkingSession({ verses: verseCollaborator, wordList: getWordList });
+    // quel que soit le point d'entrée). verseTimeline satisfait exactement
+    // l'interface que WordMarkingSession attend de son collaborateur.
+    const wordSession = new WordMarkingSession({ verses: verseTimeline, wordList: getWordList });
 
     // Verrou anti-clic-réflexe pour Début/Fin verset — une habitude de clic
     // utile quand on marque activement, gênante (et destructrice) le reste
@@ -148,12 +163,12 @@ document.addEventListener('DOMContentLoaded', function() {
             loadBtn.textContent = 'Charger';
             loadBtn.title = 'Remplace les versets actuellement marqués par ces timings existants';
             loadBtn.addEventListener('click', () => {
-                verses = part.timings.map((t) => ({
+                verseTimeline.replaceAll(part.timings.map((t) => ({
                     id: t.id,
                     start: t.startTime,
                     end: t.endTime,
                     words: [],
-                }));
+                })));
                 const lastId = verses.length > 0 ? verses[verses.length - 1].id : 0;
                 verseIdInput.value = lastId + 1;
                 forceCloseWordMode();
@@ -217,7 +232,7 @@ document.addEventListener('DOMContentLoaded', function() {
         clearAudioBtn.classList.add('visible');
         fileName.textContent = file.name;
         fileMeta.textContent = `Taille: ${formatBytes(file.size)}`;
-        verses = [];
+        verseTimeline.replaceAll();
         updateVerseList();
         showNotification('Audio chargé avec succès');
     }
@@ -230,7 +245,7 @@ document.addEventListener('DOMContentLoaded', function() {
         clearAudioBtn.classList.remove('visible');
         fileName.textContent = 'Charger un fichier audio';
         if (fileMeta) fileMeta.textContent = '';
-        verses = [];
+        verseTimeline.replaceAll();
         updateVerseList();
         currentTimeDisplay.textContent = '0.00';
         showNotification('Audio supprimé');
@@ -238,7 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Contrôles de temps personnalisés
     function seekBy(timeChange) {
-        audioPlayer.currentTime = Math.max(0, Math.min(audioPlayer.duration, audioPlayer.currentTime + timeChange));
+        timeSource.seek(Math.max(0, Math.min(audioPlayer.duration, timeSource.now() + timeChange)));
         updateTimeDisplay();
     }
 
@@ -250,7 +265,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Bouton play/pause personnalisé
     function togglePlayPause() {
-        if (!audioPlayer.src) {
+        if (!timeSource.isReady()) {
             showNotification('Veuillez charger un fichier audio d\'abord');
             return;
         }
@@ -273,7 +288,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('keydown', function(e) {
         const tag = document.activeElement?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-        if (!audioPlayer.src) return;
+        if (!timeSource.isReady()) return;
 
         if (e.code === 'Space') {
             e.preventDefault();
@@ -315,8 +330,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function updateTimeDisplay() {
-        const currentTime = audioPlayer.currentTime;
-        currentTimeDisplay.textContent = currentTime.toFixed(2);
+        currentTimeDisplay.textContent = timeSource.now().toFixed(2);
     }
 
     // Afficher la durée une fois les métadonnées chargées
@@ -337,33 +351,25 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Marquer le début d'un verset
     startVerseBtn.addEventListener('click', function() {
-        if (!audioPlayer.src) {
+        if (!timeSource.isReady()) {
             showNotification('Veuillez charger un fichier audio d\'abord');
             return;
         }
-        const time = audioPlayer.currentTime;
+        const time = timeSource.now();
         const verseId = parseInt(verseIdInput.value) || 1;
-        verses.push({ id: verseId, start: time, end: null, words: [] });
+        verseTimeline.startVerse(verseId, time);
         updateVerseList();
         showNotification(`Début de verset ${verseId} marqué`);
         verseIdInput.value = verseId + 1;
     });
-    
+
     // Marquer la fin d'un verset
     endVerseBtn.addEventListener('click', function() {
-        if (verses.length === 0) {
-            showNotification('Aucun verset à terminer');
+        const result = verseTimeline.endVerse(timeSource.now());
+        if (!result.ok) {
+            showNotification(result.reason === 'no-verse' ? 'Aucun verset à terminer' : 'Ce verset a déjà une fin');
             return;
         }
-        
-        const lastVerse = verses[verses.length - 1];
-        if (lastVerse.end !== null) {
-            showNotification('Ce verset a déjà une fin');
-            return;
-        }
-        
-        const time = audioPlayer.currentTime;
-        lastVerse.end = time;
         updateVerseList();
         showNotification('Fin de verset marquée');
     });
@@ -398,7 +404,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // objet distinct par occurrence) — ceci ne fait qu'identifier/afficher
     // la position pour ne pas les confondre en marquant les mots.
     function getOccurrenceInfo(index) {
-        return verseCollaborator.getOccurrenceInfo(verses[index]);
+        return verseTimeline.getOccurrenceInfo(verses[index]);
     }
 
     let dragSrcVerse = null;
@@ -431,9 +437,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // les réinitialise pour ne pas laisser une incohérence
             // silencieuse, même logique que resetBtn plus bas.
             function commitTimeEdit(field, label, time) {
-                verse[field] = time;
-                const hadWords = verse.words.length > 0;
-                if (hadWords) verse.words = [];
+                const { hadWords } = verseTimeline.setBoundary(index, field, time);
                 if (wordSession.getCurrentIndex() === index) forceCloseWordMode();
                 showNotification(
                     `${label} du verset ${verse.id} réglée à ${time.toFixed(2)}s` +
@@ -474,11 +478,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     nowBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
                     nowBtn.addEventListener('click', (ev) => {
                         ev.stopPropagation();
-                        if (!audioPlayer.src) {
+                        if (!timeSource.isReady()) {
                             showNotification('Charge d\'abord un fichier audio');
                             return;
                         }
-                        input.value = audioPlayer.currentTime.toFixed(2);
+                        input.value = timeSource.now().toFixed(2);
                         input.focus();
                     });
 
@@ -533,9 +537,9 @@ document.addEventListener('DOMContentLoaded', function() {
             seekBtn.className = 'seek-btn verse-action-btn';
             seekBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
             seekBtn.title = 'Avancer l\'audio au début de ce verset';
-            seekBtn.disabled = !audioPlayer.src;
+            seekBtn.disabled = !timeSource.isReady();
             seekBtn.addEventListener('click', () => {
-                audioPlayer.currentTime = verse.start;
+                timeSource.seek(verse.start);
                 updateTimeDisplay();
                 showNotification(`Audio avancé à ${verse.start.toFixed(2)}s (verset ${verse.id})`);
             });
@@ -555,7 +559,7 @@ document.addEventListener('DOMContentLoaded', function() {
             copyBtn.className = 'copy-btn verse-action-btn';
             copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
             copyBtn.addEventListener('click', () => {
-                const text = `${formatVerseObject(verse)},`;
+                const text = `${verseTimeline.serializeVerse(verse)},`;
                 navigator.clipboard.writeText(text)
                     .then(() => showNotification('Verset copié'))
                     .catch(err => console.error('Erreur de copie:', err));
@@ -566,13 +570,7 @@ document.addEventListener('DOMContentLoaded', function() {
             resetBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
             resetBtn.addEventListener('click', () => {
                 const wasOpenInWordMode = wordSession.getCurrentIndex() === index;
-                verses.splice(index, 1);
-                if (index > 0) {
-                    verses[index - 1].end = null;
-                    // Le dernier mot du verset précédent était calé sur son
-                    // ancienne fin (voir markWordBtn) — devenue invalide.
-                    verses[index - 1].words = [];
-                }
+                verseTimeline.deleteVerse(index);
                 if (wasOpenInWordMode) {
                     forceCloseWordMode();
                 }
@@ -601,7 +599,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Désactivé uniquement sur le verset encore en cours (end ===
             // null) : "Fin verset" cible toujours le dernier élément du
             // tableau, le déplacer casserait cette hypothèse.
-            const canReorderVerse = verse.end !== null;
+            const canReorderVerse = verseTimeline.canReorder(verse);
             if (canReorderVerse) {
                 verseEntry.draggable = true;
                 verseEntry.title = 'Glisser pour réordonner';
@@ -625,14 +623,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     verseEntry.classList.remove('drag-over');
                     if (dragSrcVerse === null || dragSrcVerse === verse) return;
 
-                    // Identité d'objet plutôt qu'index figé au rendu : après
-                    // avoir retiré la source, l'index de la cible peut avoir
-                    // changé — le recalculer garantit une insertion juste
-                    // avant la cible dans les deux sens.
-                    const srcIndex = verses.indexOf(dragSrcVerse);
-                    verses.splice(srcIndex, 1);
-                    const targetIndex = verses.indexOf(verse);
-                    verses.splice(targetIndex, 0, dragSrcVerse);
+                    verseTimeline.reorder(dragSrcVerse, verse);
                     dragSrcVerse = null;
 
                     updateVerseList();
@@ -679,7 +670,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!result.ok) return false;
         // Avance directement l'audio au début du verset — pas besoin de
         // rechercher la position à la main avant de marquer les mots.
-        audioPlayer.currentTime = result.seekTime;
+        timeSource.seek(result.seekTime);
         updateTimeDisplay();
         wordModeSection.style.display = 'block';
         wordModeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -768,7 +759,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wordModeVerseId.textContent = snap.verseId + (snap.occurrenceLabel ? ` ${snap.occurrenceLabel}` : '');
         prevWordBtn.disabled = !snap.canGoPrev;
         nextWordBtn.disabled = !snap.canGoNext;
-        seekNextVerseWordsBtn.disabled = !audioPlayer.src || !snap.hasNextVerse;
+        seekNextVerseWordsBtn.disabled = !timeSource.isReady() || !snap.hasNextVerse;
 
         wordProgress.textContent = snap.wordProgressText;
         renderWordCarousel(snap.words, snap.viewIndex);
@@ -933,8 +924,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // de deviner à l'avance.
 
     toggleExtraOccurrenceBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
-        const time = audioPlayer.currentTime;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
         const result = wordSession.toggleExtraOccurrence(time);
         if (!result.ok) {
             // Ne devrait pas être cliquable dans cet état (la section est
@@ -962,8 +953,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // choisit explicitement l'instant, plutôt qu'une fermeture devinée à
     // l'avance.
     terminateWordBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
-        const time = audioPlayer.currentTime;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
         const result = wordSession.terminateWord(time);
         if (!result.ok) return;
         renderWordMode();
@@ -974,8 +965,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Marque une nouvelle occurrence du VERSET en cours (pas d'un mot) —
     // le cheikh répète le verset entier plus loin dans le même passage.
     addVerseOccurrenceBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
-        const time = audioPlayer.currentTime;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
         const result = wordSession.addOrCloseVerseOccurrence(time);
         if (!result.ok) {
             if (result.reason === 'end-before-start') {
@@ -996,8 +987,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // mot suivant, au même instant — un seul clic pour enchaîner une
     // phrase répétée, sans passer par les flèches ▶ entre chaque mot.
     advanceOccurrenceBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
-        const time = audioPlayer.currentTime;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
         const result = wordSession.advanceOccurrence(time);
         if (!result.ok) {
             if (result.reason === 'target-not-marked') {
@@ -1027,8 +1018,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     markWordBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
-        const time = audioPlayer.currentTime;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
         const currentVerseId = verses[wordSession.getCurrentIndex()].id;
         const result = wordSession.markWord(time);
         if (!result.ok) return;
@@ -1046,8 +1037,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // l'occurrence principale (index 0) ; les occurrences supplémentaires
     // se gèrent séparément.
     correctWordBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
-        const time = audioPlayer.currentTime;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
         const result = wordSession.correctWord(time);
         if (!result.ok) return;
         renderWordMode();
@@ -1077,13 +1068,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // (ex. pour caler la fin du dernier mot) sans perdre le contexte de
     // marquage en cours (contrairement à "Verset suivant" qui bascule dessus).
     seekNextVerseWordsBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !audioPlayer.src) return;
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
         const nextVerse = verses[wordSession.getCurrentIndex() + 1];
         if (!nextVerse) {
             showNotification('Aucun verset suivant');
             return;
         }
-        audioPlayer.currentTime = nextVerse.start;
+        timeSource.seek(nextVerse.start);
         updateTimeDisplay();
         showNotification(`Audio avancé à ${nextVerse.start.toFixed(2)}s (verset ${nextVerse.id})`);
     });
@@ -1100,43 +1091,16 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Champ `words` au format TafsirAudioTiming.words de tafsir-app, prêt à
-    // coller dans audios.ts. Absent tant qu'aucun mot n'a été marqué (les
-    // versets sans données de mots restent inchangés). Chaque mot est un
-    // tableau d'occurrences ({startTime,endTime}[]) — normalement une
-    // seule (la principale), plus si le mot est redit plus tard dans le
-    // même passage. Miroir de VerseHighlight.occurrences côté tafsir-app,
-    // appliqué au niveau du mot plutôt que du verset.
-    function formatWordsField(verse) {
-        if (!verse.words || verse.words.length === 0) return '';
-        const items = verse.words
-            .map((occurrences) => {
-                const ranges = occurrences
-                    .map((w) => `{ startTime: ${w.start.toFixed(2)}, endTime: ${w.end !== null ? w.end.toFixed(2) : '?'} }`)
-                    .join(', ');
-                return `[${ranges}]`;
-            })
-            .join(', ');
-        return `, words: [${items}]`;
-    }
-
-    // Fragment `{ id, startTime, endTime, words? }` d'un verset, sans
-    // virgule finale ni emballage — copyBtn, formatVersesForCopy et
-    // formatVersesForExport l'utilisent chacun avec leur propre ponctuation
-    // autour. `!== null` (pas une simple vérité) : un endTime de 0.00s est
-    // une valeur légitime, pas une absence — voir makeEditableTime plus
-    // haut, qui fait déjà ce test correctement.
-    function formatVerseObject(verse) {
-        const endTime = verse.end !== null ? verse.end.toFixed(2) : '?';
-        return `{ id: ${verse.id}, startTime: ${verse.start.toFixed(2)}, endTime: ${endTime}${formatWordsField(verse)} }`;
-    }
-
+    // La sérialisation d'un verset (fragment `{ id, startTime, endTime,
+    // words? }`) vit dans verse-timeline.js — voir
+    // VerseTimeline.serializeVerse. Ici on ne fait qu'ajouter la
+    // ponctuation propre à chaque usage (copie groupée vs export).
     function formatVersesForCopy() {
-        return verses.map((verse) => `${formatVerseObject(verse)},`).join('\n');
+        return verses.map((verse) => `${verseTimeline.serializeVerse(verse)},`).join('\n');
     }
 
     function formatVersesForExport() {
-        return verses.map((verse) => `[${formatVerseObject(verse)},]`).join('\n');
+        return verses.map((verse) => `[${verseTimeline.serializeVerse(verse)},]`).join('\n');
     }
     
     function showNotification(message) {
