@@ -184,7 +184,8 @@ h1 {
   gap: 6px;
 }
 
-.clear-audio-btn.visible {
+.clear-audio-btn.visible,
+.clear-audio-btn.always-visible {
   display: flex;
 }
 

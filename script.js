@@ -2,6 +2,8 @@
 // (data/existing-timings.js) sont générées depuis tafsir-app — voir ces
 // fichiers pour leur origine. Chargées comme <script> avant celui-ci.
 
+import { WordMarkingSession, createArrayVerseCollaborator } from './word-marking-session.js';
+
 document.addEventListener('DOMContentLoaded', function() {
     const audioPlayer = document.getElementById('audioPlayer');
     const audioWrapper = document.getElementById('audioWrapper');
@@ -52,32 +54,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let verses = [];
     let updateTimer;
-    let wordModeVerseIndex = null;
-    // Index du mot affiché dans le panneau (navigable via les flèches),
-    // distinct du nombre de mots déjà marqués — permet de revoir/corriger
-    // un mot précédent sans devoir tout annuler jusque-là.
-    let wordViewIndex = 0;
-    // Index du mot dont la dernière occurrence supplémentaire est encore
-    // ouverte (null si aucune) — permet d'enchaîner l'occurrence sur le
-    // mot suivant en navigant, comme le marquage principal. Remis à zéro
-    // à chaque ouverture/fermeture du mode mots.
-    let activeExtraWordIndex = null;
-    // Index (dans `verses`) d'une nouvelle occurrence du verset en cours de
-    // mots, ajoutée depuis le panneau mots sans quitter le mode mots (le
-    // verset se répète plus loin dans l'audio) — start posé, end pas encore.
-    // null si aucune n'est en cours. Contourne verseMarkingLocked
-    // délibérément : cette action n'ajoute qu'une entrée en fin de tableau,
-    // elle ne touche jamais verses[wordModeVerseIndex], donc rien à protéger
-    // d'un clic réflexe ici (contrairement à Début/Fin verset globaux).
-    let pendingVerseOccurrenceIndex = null;
 
-    // Verrous anti-clic-réflexe : Début/Fin verset et Marquer ce mot sont
-    // des habitudes de clic — utiles quand on marque activement, gênants
-    // (et destructeurs) le reste du temps. Déverrouillés par défaut ;
-    // ouvrir le mode mots verrouille automatiquement les versets, le
-    // fermer les redéverrouille (voir openWordMode/closeWordMode).
+    // Collaborateur temporaire autour du tableau `verses` — voir
+    // word-marking-session.js pour l'interface attendue. Le jour où
+    // VerseTimeline existe, il remplace ce wrapper sans toucher
+    // WordMarkingSession ni le câblage ci-dessous.
+    const verseCollaborator = createArrayVerseCollaborator(() => verses);
+    // Possède tout l'état du mode mots (verset en cours, mot affiché,
+    // occurrences supplémentaires, occurrence de verset en attente, verrou
+    // anti-clic-réflexe) — voir word-marking-session.js pour les invariants
+    // qu'elle applique elle-même désormais (ex. impossible d'ouvrir un
+    // verset en écrasant silencieusement une occurrence encore ouverte,
+    // quel que soit le point d'entrée).
+    const wordSession = new WordMarkingSession({ verses: verseCollaborator, wordList: getWordList });
+
+    // Verrou anti-clic-réflexe pour Début/Fin verset — une habitude de clic
+    // utile quand on marque activement, gênante (et destructrice) le reste
+    // du temps. Déverrouillé par défaut ; ouvrir le mode mots le verrouille
+    // automatiquement, le fermer le redéverrouille (voir tryOpenWordMode/
+    // requestCloseWordMode). Le verrou équivalent côté mots
+    // (wordMarkingLocked) vit maintenant dans wordSession elle-même.
     let verseMarkingLocked = false;
-    let wordMarkingLocked = false;
 
     function renderVerseLock() {
         toggleVerseLockBtn.classList.toggle('locked', verseMarkingLocked);
@@ -87,12 +84,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderWordLock() {
-        toggleWordLockBtn.classList.toggle('locked', wordMarkingLocked);
-        toggleWordLockBtn.classList.toggle('unlocked', !wordMarkingLocked);
-        if (wordModeVerseIndex !== null) {
+        const locked = wordSession.isWordMarkingLocked();
+        toggleWordLockBtn.classList.toggle('locked', locked);
+        toggleWordLockBtn.classList.toggle('unlocked', !locked);
+        if (wordSession.isOpen()) {
             renderWordMode();
         } else {
-            markWordBtn.disabled = wordMarkingLocked;
+            markWordBtn.disabled = locked;
         }
     }
 
@@ -103,9 +101,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     toggleWordLockBtn.addEventListener('click', function() {
-        wordMarkingLocked = !wordMarkingLocked;
+        const locked = wordSession.toggleWordMarkingLocked();
         renderWordLock();
-        showNotification(wordMarkingLocked ? 'Marquage de mots verrouillé' : 'Marquage de mots déverrouillé');
+        showNotification(locked ? 'Marquage de mots verrouillé' : 'Marquage de mots déverrouillé');
     });
 
     renderVerseLock();
@@ -158,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }));
                 const lastId = verses.length > 0 ? verses[verses.length - 1].id : 0;
                 verseIdInput.value = lastId + 1;
-                closeWordMode();
+                forceCloseWordMode();
                 updateVerseList();
                 showNotification(`Timings de "${part.title || part.id}" chargés (${verses.length} versets)`);
             });
@@ -400,11 +398,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // objet distinct par occurrence) — ceci ne fait qu'identifier/afficher
     // la position pour ne pas les confondre en marquant les mots.
     function getOccurrenceInfo(index) {
-        const verse = verses[index];
-        const sameId = verses.filter((v) => v.id === verse.id);
-        if (sameId.length <= 1) return null;
-        const position = verses.slice(0, index + 1).filter((v) => v.id === verse.id).length;
-        return { position, total: sameId.length };
+        return verseCollaborator.getOccurrenceInfo(verses[index]);
     }
 
     let dragSrcVerse = null;
@@ -440,7 +434,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 verse[field] = time;
                 const hadWords = verse.words.length > 0;
                 if (hadWords) verse.words = [];
-                if (wordModeVerseIndex === index) closeWordMode();
+                if (wordSession.getCurrentIndex() === index) forceCloseWordMode();
                 showNotification(
                     `${label} du verset ${verse.id} réglée à ${time.toFixed(2)}s` +
                     (hadWords ? ' — mots réinitialisés (dépendaient de l\'ancienne limite)' : ''),
@@ -555,7 +549,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 : verse.end === null
                     ? 'Marque d\'abord la fin du verset'
                     : 'Marquer les mots de ce verset';
-            wordsBtn.addEventListener('click', () => openWordMode(index));
+            wordsBtn.addEventListener('click', () => tryOpenWordMode(index));
 
             const copyBtn = document.createElement('button');
             copyBtn.className = 'copy-btn verse-action-btn';
@@ -571,6 +565,7 @@ document.addEventListener('DOMContentLoaded', function() {
             resetBtn.className = 'end-btn verse-action-btn';
             resetBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
             resetBtn.addEventListener('click', () => {
+                const wasOpenInWordMode = wordSession.getCurrentIndex() === index;
                 verses.splice(index, 1);
                 if (index > 0) {
                     verses[index - 1].end = null;
@@ -578,8 +573,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     // ancienne fin (voir markWordBtn) — devenue invalide.
                     verses[index - 1].words = [];
                 }
-                if (wordModeVerseIndex === index) {
-                    closeWordMode();
+                if (wasOpenInWordMode) {
+                    forceCloseWordMode();
                 }
                 const currentId = parseInt(verseIdInput.value) || 1;
                 verseIdInput.value = Math.max(1, currentId - 1);
@@ -600,12 +595,12 @@ document.addEventListener('DOMContentLoaded', function() {
             // alors qu'il devrait être plus tôt (l'ordre compte pour
             // resetBtn — qui referme le verset PRÉCÉDENT dans le tableau —
             // et pour "Verset suivant" en mode mots). Autorisé même pendant
-            // que le mode mots est ouvert : wordModeVerseIndex et
-            // pendingVerseOccurrenceIndex sont resynchronisés par identité
-            // après coup (voir le handler drop) plutôt que bloqués. Désactivé
-            // uniquement sur le verset encore en cours (end === null) : "Fin
-            // verset" cible toujours le dernier élément du tableau, le
-            // déplacer casserait cette hypothèse.
+            // que le mode mots est ouvert : wordSession retient le verset en
+            // cours par référence d'objet, pas par index — un réordonnancement
+            // ne peut donc rien invalider, aucune resynchronisation requise.
+            // Désactivé uniquement sur le verset encore en cours (end ===
+            // null) : "Fin verset" cible toujours le dernier élément du
+            // tableau, le déplacer casserait cette hypothèse.
             const canReorderVerse = verse.end !== null;
             if (canReorderVerse) {
                 verseEntry.draggable = true;
@@ -630,14 +625,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     verseEntry.classList.remove('drag-over');
                     if (dragSrcVerse === null || dragSrcVerse === verse) return;
 
-                    // Capturés par identité avant le remaniement, pour
-                    // resynchroniser les index numériques après coup — le
-                    // mode mots (et une éventuelle occurrence de verset en
-                    // cours d'ajout) ne doit pas se retrouver à pointer sur
-                    // le mauvais verset après un réordonnancement.
-                    const wordModeVerse = wordModeVerseIndex !== null ? verses[wordModeVerseIndex] : null;
-                    const pendingVerse = pendingVerseOccurrenceIndex !== null ? verses[pendingVerseOccurrenceIndex] : null;
-
                     // Identité d'objet plutôt qu'index figé au rendu : après
                     // avoir retiré la source, l'index de la cible peut avoir
                     // changé — le recalculer garantit une insertion juste
@@ -648,9 +635,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     verses.splice(targetIndex, 0, dragSrcVerse);
                     dragSrcVerse = null;
 
-                    if (wordModeVerse !== null) wordModeVerseIndex = verses.indexOf(wordModeVerse);
-                    if (pendingVerse !== null) pendingVerseOccurrenceIndex = verses.indexOf(pendingVerse);
-
                     updateVerseList();
                     showNotification('Versets réordonnés');
                 });
@@ -660,21 +644,42 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Ouvre le mode mots pour un verset (déjà borné start+end).
-    function openWordMode(index) {
-        const verse = verses[index];
-        const wordList = getWordList(verse.id);
-        if (!wordList || verse.end === null) return;
+    // Fenêtre de confirmation commune : open()/requestClose()/
+    // advanceToNextWordableVerse() ont détecté une occurrence (mot ou
+    // verset) encore ouverte — demande confirmation puis rejoue l'action
+    // avec { force: true }. La garde vit dans wordSession elle-même, donc
+    // aucun appelant ne peut plus l'oublier (contrairement à l'ancien code,
+    // où le bouton "Mots" de la liste ouvrait directement sans passer par
+    // cette vérification).
+    function withLeaveConfirm(attempt) {
+        const result = attempt();
+        if (result.ok) return result;
+        if (result.reason === 'open-extra-occurrence') {
+            const confirmed = window.confirm(
+                `Une occurrence supplémentaire est encore ouverte sur le mot ${result.wordIndex + 1} ` +
+                '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
+            );
+            return confirmed ? attempt({ force: true }) : result;
+        }
+        if (result.reason === 'open-verse-occurrence') {
+            const confirmed = window.confirm(
+                `Une nouvelle occurrence de ce verset est encore ouverte depuis ${result.pendingStart.toFixed(2)}s ` +
+                '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
+            );
+            return confirmed ? attempt({ force: true }) : result;
+        }
+        return result;
+    }
 
-        wordModeVerseIndex = index;
-        wordViewIndex = verse.words.length;
-        activeExtraWordIndex = null;
-        pendingVerseOccurrenceIndex = null;
-        const occ = getOccurrenceInfo(index);
-        wordModeVerseId.textContent = verse.id + (occ ? ` (occurrence ${occ.position}/${occ.total})` : '');
+    // Effets de bord d'une ouverture réussie (open() ou
+    // advanceToNextWordableVerse()) : positionner l'audio, afficher le
+    // panneau, verrouiller Début/Fin verset. Retourne false sans rien faire
+    // si le résultat est un échec.
+    function applyOpenResult(result) {
+        if (!result.ok) return false;
         // Avance directement l'audio au début du verset — pas besoin de
         // rechercher la position à la main avant de marquer les mots.
-        audioPlayer.currentTime = verse.start;
+        audioPlayer.currentTime = result.seekTime;
         updateTimeDisplay();
         wordModeSection.style.display = 'block';
         wordModeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -689,50 +694,39 @@ document.addEventListener('DOMContentLoaded', function() {
         // ce ré-affichage, les lignes gardaient leur ancien état draggable
         // jusqu'au prochain rendu fortuit (ex. marquer un mot).
         updateVerseList();
+        return true;
     }
 
-    function closeWordMode() {
-        wordModeVerseIndex = null;
+    // Ouvre le mode mots pour le verset à `index` — point d'entrée unique,
+    // utilisé par le bouton "Mots" de la liste comme par la navigation
+    // interne au panneau mots.
+    function tryOpenWordMode(index) {
+        const result = withLeaveConfirm((opts) => wordSession.open(index, opts));
+        if (applyOpenResult(result)) return;
+        if (result.reason === 'not-markable') {
+            showNotification('Marque d\'abord la fin du verset, ou pas de données de mots pour ce verset');
+        }
+    }
+
+    function applyCloseEffects() {
         wordModeSection.style.display = 'none';
         verseMarkingLocked = false;
-        activeExtraWordIndex = null;
-        pendingVerseOccurrenceIndex = null;
         renderVerseLock();
         updateVerseList();
     }
 
-    // Vrai si une occurrence supplémentaire est en cours (démarrée, pas
-    // encore terminée) — sert à avertir avant de fermer/changer de verset
-    // sans l'avoir refermée, plutôt que de la laisser silencieusement
-    // ouverte (fin `?` à l'export, comme c'est arrivé la première fois).
-    function hasOpenExtraOccurrence() {
-        if (wordModeVerseIndex === null || activeExtraWordIndex === null) return false;
-        const occurrences = verses[wordModeVerseIndex].words[activeExtraWordIndex];
-        return occurrences.length > 1 && occurrences[occurrences.length - 1].end === null;
+    // Ferme le mode mots sans confirmation — utilisé quand le verset en
+    // cours de marquage vient d'être supprimé ou dont une borne vient
+    // d'être modifiée : il n'y a alors plus rien à préserver.
+    function forceCloseWordMode() {
+        wordSession.requestClose({ force: true });
+        applyCloseEffects();
     }
 
-    function confirmLeavingOpenExtraOccurrence() {
-        if (!hasOpenExtraOccurrence()) return true;
-        return window.confirm(
-            `Une occurrence supplémentaire est encore ouverte sur le mot ${activeExtraWordIndex + 1} ` +
-            '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
-        );
-    }
-
-    // Même garde-fou que hasOpenExtraOccurrence/confirmLeavingOpenExtraOccurrence,
-    // pour la nouvelle occurrence de VERSET (pas de mot) ajoutée depuis le
-    // panneau mots — voir addVerseOccurrenceBtn plus bas.
-    function hasOpenVerseOccurrence() {
-        return pendingVerseOccurrenceIndex !== null;
-    }
-
-    function confirmLeavingOpenVerseOccurrence() {
-        if (!hasOpenVerseOccurrence()) return true;
-        const start = verses[pendingVerseOccurrenceIndex].start;
-        return window.confirm(
-            `Une nouvelle occurrence de ce verset est encore ouverte depuis ${start.toFixed(2)}s ` +
-            '(jamais refermée). Continuer quand même la laissera incomplète (fin "?"). Continuer ?'
-        );
+    function notifyShrunk(shrunk) {
+        if (shrunk) {
+            showNotification(`Fin du dernier mot resserrée à ${shrunk.shrunkTo.toFixed(2)}s (occurrence détectée avant)`);
+        }
     }
 
     // Affiche tous les mots du verset (pas seulement le mot courant) dans
@@ -764,65 +758,50 @@ document.addEventListener('DOMContentLoaded', function() {
         wordCarouselTrack.style.transform = `translateX(${currentX + delta}px)`;
     }
 
-    // `wordViewIndex` navigue parmi : les mots déjà marqués [0, doneCount-1]
-    // (relecture/correction), PLUS un emplacement "à marquer" à l'index
-    // doneCount tant que le verset n'est pas complet. Une fois complet, il
-    // n'y a plus d'emplacement à marquer, seulement des mots à corriger.
+    // Peint le panneau mots à partir de wordSession.describe() — toutes les
+    // règles "quoi afficher/activer quand" vivent dans la session ; cette
+    // fonction ne fait que poser des chaînes et des attributs dans le DOM.
     function renderWordMode() {
-        const verse = verses[wordModeVerseIndex];
-        const wordList = getWordList(verse.id);
-        const total = wordList.length;
-        const doneCount = verse.words.length;
-        const maxIndex = doneCount < total ? doneCount : total - 1;
-        wordViewIndex = Math.min(Math.max(wordViewIndex, 0), maxIndex);
-        const isPendingSlot = wordViewIndex === doneCount && doneCount < total;
+        if (!wordSession.isOpen()) return;
+        const snap = wordSession.describe();
 
-        prevWordBtn.disabled = wordViewIndex <= 0;
-        nextWordBtn.disabled = wordViewIndex >= maxIndex;
-        seekNextVerseWordsBtn.disabled = !audioPlayer.src || wordModeVerseIndex + 1 >= verses.length;
+        wordModeVerseId.textContent = snap.verseId + (snap.occurrenceLabel ? ` ${snap.occurrenceLabel}` : '');
+        prevWordBtn.disabled = !snap.canGoPrev;
+        nextWordBtn.disabled = !snap.canGoNext;
+        seekNextVerseWordsBtn.disabled = !audioPlayer.src || !snap.hasNextVerse;
 
-        wordProgress.textContent = isPendingSlot
-            ? `Mot ${wordViewIndex + 1} / ${total} — à marquer`
-            : `Mot ${wordViewIndex + 1} / ${total}` + (doneCount >= total ? ' — tous les mots sont marqués' : ' (déjà marqué)');
-        renderWordCarousel(wordList, wordViewIndex);
+        wordProgress.textContent = snap.wordProgressText;
+        renderWordCarousel(snap.words, snap.viewIndex);
 
         // Marquer une nouvelle occurrence de CE verset (pas d'un mot) sans
-        // quitter le mode mots — contourne délibérément verseMarkingLocked,
-        // voir la note sur pendingVerseOccurrenceIndex plus haut.
-        addVerseOccurrenceBtn.textContent = hasOpenVerseOccurrence()
-            ? 'Terminer cette occurrence de verset ici'
-            : '+ Occurrence de ce verset ici';
-        addVerseOccurrenceBtn.title = hasOpenVerseOccurrence()
+        // quitter le mode mots — contourne délibérément verseMarkingLocked
+        // (voir addOrCloseVerseOccurrence dans word-marking-session.js).
+        addVerseOccurrenceBtn.textContent = snap.addOccurrenceLabel;
+        addVerseOccurrenceBtn.title = snap.addOccurrenceLabel.startsWith('Terminer')
             ? 'Marque la fin de cette nouvelle occurrence à la position audio actuelle'
             : 'Le verset répète plus loin dans l\'audio : marque cette nouvelle occurrence sans quitter le mode mots';
 
-        if (isPendingSlot) {
+        if (snap.isPendingSlot) {
             markWordBtn.style.display = '';
             correctWordBtn.style.display = 'none';
             terminateWordBtn.style.display = 'none';
-            markWordBtn.disabled = wordMarkingLocked;
+            markWordBtn.disabled = snap.wordMarkingLocked;
             extraOccurrencesSection.style.display = 'none';
         } else {
             markWordBtn.style.display = 'none';
             correctWordBtn.style.display = '';
-            // occurrences[0] = occurrence principale (chaîne contiguë avec
-            // les mots voisins) ; occurrences[1+] = occurrences
-            // supplémentaires, indépendantes, gérées plus bas.
-            const primary = verse.words[wordViewIndex][0];
-            correctWordBtn.textContent = `Recaler le début ici (actuel : ${primary.start.toFixed(2)}s)`;
-            correctWordBtn.disabled = wordMarkingLocked;
+            correctWordBtn.textContent = `Recaler le début ici (actuel : ${snap.primary.start.toFixed(2)}s)`;
+            correctWordBtn.disabled = snap.wordMarkingLocked;
 
             // Seul le mot le plus récemment marqué peut avoir sa principale
-            // encore ouverte (.end === null) — tant que ce n'est pas fermé,
-            // ajouter une occurrence supplémentaire ici n'a pas de sens (on
-            // se retrouverait avec deux occurrences ouvertes en même temps
-            // sur le même mot). On propose donc de la fermer directement au
-            // lieu d'afficher la section occurrences.
-            const primaryOpen = primary.end === null;
-            terminateWordBtn.style.display = primaryOpen ? '' : 'none';
-            terminateWordBtn.disabled = wordMarkingLocked;
-            extraOccurrencesSection.style.display = primaryOpen ? 'none' : '';
-            if (!primaryOpen) renderExtraOccurrences();
+            // encore ouverte — tant que ce n'est pas fermé, ajouter une
+            // occurrence supplémentaire ici n'a pas de sens. On propose donc
+            // de la fermer directement au lieu d'afficher la section
+            // occurrences.
+            terminateWordBtn.style.display = snap.primary.open ? '' : 'none';
+            terminateWordBtn.disabled = snap.wordMarkingLocked;
+            extraOccurrencesSection.style.display = snap.primary.open ? 'none' : '';
+            if (!snap.primary.open) renderExtraOccurrences(snap.extra);
         }
 
         // Chaque ligne est cliquable (pas seulement le numéro visuellement,
@@ -830,21 +809,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // wordViewIndex dessus, équivalent à cliquer ◀/▶ plusieurs fois mais
         // en un clic — pour corriger un mot déjà marqué sans naviguer pas à
         // pas depuis la position courante.
-        wordMarkedList.innerHTML = verse.words
-            .map((occurrences, i) => {
-                const primary = occurrences[0];
-                const extraCount = occurrences.length - 1;
-                const extraSuffix = extraCount > 0 ? ` (+${extraCount} occurrence${extraCount > 1 ? 's' : ''})` : '';
+        wordMarkedList.innerHTML = snap.markedWords
+            .map((w) => {
+                const extraSuffix = w.extraCount > 0 ? ` (+${w.extraCount} occurrence${w.extraCount > 1 ? 's' : ''})` : '';
                 // <bdi> isole le mot arabe : sans ça, Chrome réordonne
                 // visuellement toute la ligne (nombres et tiret compris)
                 // autour du texte RTL, même avec dir="ltr" sur le conteneur.
-                return `<div class="word-marked-row${i === wordViewIndex ? ' active' : ''}" data-index="${i}" title="Revoir/corriger ce mot">${i === wordViewIndex ? '→ ' : '　'}${i + 1}. <bdi>${wordList[i]}</bdi> — ${primary.start.toFixed(2)} → ${primary.end !== null ? primary.end.toFixed(2) : '?'}${extraSuffix}</div>`;
+                return `<div class="word-marked-row${w.isActive ? ' active' : ''}" data-index="${w.index}" title="Revoir/corriger ce mot">${w.isActive ? '→ ' : '　'}${w.index + 1}. <bdi>${w.arabic}</bdi> — ${w.start.toFixed(2)} → ${w.end !== null ? w.end.toFixed(2) : '?'}${extraSuffix}</div>`;
             })
             .join('');
 
         wordMarkedList.querySelectorAll('.word-marked-row').forEach((row) => {
             row.addEventListener('click', () => {
-                wordViewIndex = parseInt(row.dataset.index, 10);
+                wordSession.setViewIndex(parseInt(row.dataset.index, 10));
                 renderWordMode();
             });
         });
@@ -869,75 +846,53 @@ document.addEventListener('DOMContentLoaded', function() {
     // suite de mots, plus tard dans le même passage. Comme le marquage
     // principal, ça enchaîne : démarrer une occurrence sur un mot puis
     // naviguer vers le mot suivant pour en démarrer une autre ferme
-    // automatiquement la précédente au même instant (`activeExtraWordIndex`
-    // retient sur quel mot l'occurrence est encore ouverte, quel que soit
-    // le mot affiché à l'instant du clic). Un seul mot répété isolément :
-    // un clic pour démarrer, un clic (sur ce même mot) pour terminer.
-    function renderExtraOccurrences() {
-        const verse = verses[wordModeVerseIndex];
-        const occurrences = verse.words[wordViewIndex];
-        const extras = occurrences.slice(1);
-
-        if (activeExtraWordIndex === null) {
-            toggleExtraOccurrenceBtn.textContent = '+ Ajouter une occurrence ici';
-        } else if (activeExtraWordIndex === wordViewIndex) {
-            toggleExtraOccurrenceBtn.textContent = 'Terminer cette occurrence ici';
-        } else {
-            toggleExtraOccurrenceBtn.textContent = 'Continuer ici (ferme le mot précédent)';
-        }
-        toggleExtraOccurrenceBtn.disabled = wordMarkingLocked;
+    // automatiquement la précédente au même instant. Un seul mot répété
+    // isolément : un clic pour démarrer, un clic (sur ce même mot) pour
+    // terminer. `extra` vient de wordSession.describe() : le calcul "quoi
+    // afficher" est déjà fait, cette fonction ne fait que peindre et câbler
+    // les événements DOM.
+    function renderExtraOccurrences(extra) {
+        toggleExtraOccurrenceBtn.textContent = extra.toggleLabel;
+        toggleExtraOccurrenceBtn.disabled = wordSession.isWordMarkingLocked();
 
         // "Mot suivant" : ferme l'occurrence en cours ET avance directement
         // au mot suivant en un seul clic, pour enchaîner une phrase répétée
         // sans naviguer à la main avec ▶ entre chaque mot.
-        const total = getWordList(verse.id)?.length ?? 0;
-        const canAdvance =
-            activeExtraWordIndex === wordViewIndex && wordViewIndex + 1 < total;
-        advanceOccurrenceBtn.style.display = canAdvance ? '' : 'none';
-        advanceOccurrenceBtn.disabled = wordMarkingLocked;
+        advanceOccurrenceBtn.style.display = extra.canAdvance ? '' : 'none';
+        advanceOccurrenceBtn.disabled = wordSession.isWordMarkingLocked();
 
-        if (activeExtraWordIndex !== null && activeExtraWordIndex !== wordViewIndex) {
-            const openStart = verse.words[activeExtraWordIndex][verse.words[activeExtraWordIndex].length - 1].start;
-            activeExtraWarning.textContent = `⚠ Occurrence encore ouverte sur le mot ${activeExtraWordIndex + 1} depuis ${openStart.toFixed(2)}s — navigue jusque-là pour la terminer, ou clique ici pour l'y rattacher et l'enchaîner.`;
+        if (extra.activeWarning) {
+            activeExtraWarning.textContent = `⚠ Occurrence encore ouverte sur le mot ${extra.activeWarning.wordIndex + 1} depuis ${extra.activeWarning.openStart.toFixed(2)}s — navigue jusque-là pour la terminer, ou clique ici pour l'y rattacher et l'enchaîner.`;
             activeExtraWarning.style.display = '';
         } else {
             activeExtraWarning.style.display = 'none';
         }
 
         // Glisser-déposer pour réordonner : utile quand une occurrence
-        // antérieure (chronologiquement) est ajoutée après coup — on avait
-        // oublié de la marquer sur le moment, elle arrive donc en dernier
-        // dans le tableau alors qu'elle devrait être plus tôt. Désactivé
-        // tant qu'une occurrence de CE mot est encore ouverte : le code de
-        // fermeture/enchaînement (toggleExtraOccurrenceBtn, advanceOccurrenceBtn)
-        // suppose que la dernière entrée du tableau est celle qui est
-        // ouverte — la déplacer casserait cette hypothèse.
-        const canReorder = activeExtraWordIndex !== wordViewIndex;
+        // antérieure (chronologiquement) est ajoutée après coup. Désactivé
+        // tant qu'une occurrence de ce mot est encore ouverte (voir
+        // reorderExtraOccurrence dans word-marking-session.js).
+        const canReorder = extra.canReorder;
 
-        extraOccurrencesList.innerHTML = extras.length === 0
+        extraOccurrencesList.innerHTML = extra.items.length === 0
             ? '<span style="color: var(--text-secondary); font-size: 13px;">Aucune occurrence supplémentaire</span>'
-            : extras.map((e, i) => `<span class="extra-occurrence-row" data-extra-index="${i}"${canReorder ? ' draggable="true" title="Glisser pour réordonner"' : ''}>${i + 1}. ${e.start.toFixed(2)} → ${e.end !== null ? e.end.toFixed(2) : '…'}<button type="button" class="remove-extra-btn" data-extra-index="${i}" title="Supprimer">×</button></span>`).join('');
+            : extra.items.map((e, i) => `<span class="extra-occurrence-row" data-extra-index="${i}"${canReorder ? ' draggable="true" title="Glisser pour réordonner"' : ''}>${i + 1}. ${e.start.toFixed(2)} → ${e.end !== null ? e.end.toFixed(2) : '…'}<button type="button" class="remove-extra-btn" data-extra-index="${i}" title="Supprimer">×</button></span>`).join('');
 
         extraOccurrencesList.querySelectorAll('.remove-extra-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.extraIndex, 10);
-                occurrences.splice(idx + 1, 1); // +1 : l'index 0 est la principale
-                const stillOpen = occurrences.length > 1 && occurrences[occurrences.length - 1].end === null;
-                if (activeExtraWordIndex === wordViewIndex && !stillOpen) {
-                    activeExtraWordIndex = null;
-                }
+                wordSession.removeExtraOccurrence(idx);
                 renderWordMode();
                 updateVerseList();
             });
         });
 
         if (canReorder) {
-            let dragSrcOccurrence = null;
+            let dragSrcIndex = null;
             const rows = extraOccurrencesList.querySelectorAll('.extra-occurrence-row');
             rows.forEach((row, i) => {
-                const targetOccurrence = extras[i];
                 row.addEventListener('dragstart', () => {
-                    dragSrcOccurrence = targetOccurrence;
+                    dragSrcIndex = i;
                     row.classList.add('dragging');
                 });
                 row.addEventListener('dragend', () => {
@@ -954,17 +909,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 row.addEventListener('drop', (e) => {
                     e.preventDefault();
                     row.classList.remove('drag-over');
-                    if (dragSrcOccurrence === null || dragSrcOccurrence === targetOccurrence) return;
-                    // Identité d'objet plutôt qu'index figé au rendu : après
-                    // avoir retiré la source, l'index de la cible peut avoir
-                    // changé (glisser un élément plus tôt vers un plus tard) —
-                    // le recalculer garantit une insertion juste avant la
-                    // cible dans les deux sens, pas seulement en arrière.
-                    const srcIndex = occurrences.indexOf(dragSrcOccurrence);
-                    occurrences.splice(srcIndex, 1);
-                    const targetIndex = occurrences.indexOf(targetOccurrence);
-                    occurrences.splice(targetIndex, 0, dragSrcOccurrence);
-                    dragSrcOccurrence = null;
+                    if (dragSrcIndex === null || dragSrcIndex === i) return;
+                    wordSession.reorderExtraOccurrence(dragSrcIndex, i);
+                    dragSrcIndex = null;
                     renderWordMode();
                     updateVerseList();
                     showNotification('Occurrences réordonnées');
@@ -973,131 +920,74 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Le dernier mot d'un verset a sa fin calée sur `verse.end` par défaut
-    // (voir markWordBtn) — une approximation, pas une vraie frontière
-    // observée comme pour les autres mots. Si une occurrence supplémentaire
-    // d'un AUTRE mot démarre avant cette fin, c'est la preuve que le
-    // cheikh a repris la parole plus tôt que prévu : on resserre la fin du
-    // dernier mot sur ce début plutôt que de laisser l'approximation.
-    function shrinkLastWordEndIfNeeded(verse, newOccurrenceWordIndex, startTime) {
-        const total = getWordList(verse.id)?.length;
-        if (!total) return false;
-        const lastIndex = total - 1;
-        if (newOccurrenceWordIndex === lastIndex) return false; // le dernier mot qui se répète lui-même n'informe rien
-        if (verse.words.length <= lastIndex) return false; // le dernier mot n'est pas encore marqué
-
-        const lastWordPrimary = verse.words[lastIndex][0];
-        if (lastWordPrimary.end !== null && startTime < lastWordPrimary.end) {
-            lastWordPrimary.end = startTime;
-            showNotification(
-                `Fin du dernier mot resserrée à ${startTime.toFixed(2)}s (occurrence détectée avant)`,
-            );
-            return true;
-        }
-        return false;
-    }
-
     // NB : on ne ferme PAS automatiquement un mot principal encore ouvert
     // (.end === null) quand une occurrence démarre ailleurs — contrairement
-    // au dernier mot du verset (shrinkLastWordEndIfNeeded, dont la fin par
-    // défaut est verse.end, une vraie limite de bloc), un mot en cours de
-    // marquage peut légitimement reprendre après une brève incise. Une
-    // fermeture automatique ici s'est révélée prématurée en pratique (elle
-    // se produisait avant que le mot ait fini d'être dit, obligeant à un
-    // contournement pour corriger ensuite). Le flux normal — marquer le mot
-    // suivant — referme correctement ce mot dès que l'utilisateur est prêt,
-    // sans avoir besoin de deviner à l'avance.
+    // au dernier mot du verset (voir shrinkLastWordEndIfNeeded dans
+    // word-marking-session.js, dont la fin par défaut est verse.end, une
+    // vraie limite de bloc), un mot en cours de marquage peut légitimement
+    // reprendre après une brève incise. Une fermeture automatique ici s'est
+    // révélée prématurée en pratique (elle se produisait avant que le mot
+    // ait fini d'être dit, obligeant à un contournement pour corriger
+    // ensuite). Le flux normal — marquer le mot suivant — referme
+    // correctement ce mot dès que l'utilisateur est prêt, sans avoir besoin
+    // de deviner à l'avance.
 
     toggleExtraOccurrenceBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
-        const verse = verses[wordModeVerseIndex];
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
         const time = audioPlayer.currentTime;
-
-        if (activeExtraWordIndex === wordViewIndex) {
-            const occurrences = verse.words[wordViewIndex];
-            occurrences[occurrences.length - 1].end = time;
-            activeExtraWordIndex = null;
+        const result = wordSession.toggleExtraOccurrence(time);
+        if (!result.ok) {
+            // Ne devrait pas être cliquable dans cet état (la section est
+            // masquée si la principale est ouverte, voir renderWordMode) —
+            // gardé ici en filet de sécurité.
+            if (result.reason === 'primary-open') {
+                showNotification('Ce mot a encore une occurrence principale ouverte — termine-la d\'abord ("Terminer ce mot ici").');
+            }
+            return;
+        }
+        if (result.action === 'closed') {
             showNotification('Occurrence supplémentaire terminée');
-            renderWordMode();
-            updateVerseList();
-            return;
-        }
-
-        // Garde-fou : un mot dont la principale est encore ouverte ne peut
-        // pas recevoir d'occurrence supplémentaire — on se retrouverait avec
-        // deux occurrences ouvertes en même temps sur le même mot, sans
-        // façon claire de dire laquelle est laquelle. Ne devrait pas être
-        // cliquable (la section est masquée dans ce cas, voir
-        // renderWordMode), gardé ici en filet de sécurité.
-        const primary = verse.words[wordViewIndex][0];
-        if (primary.end === null) {
-            showNotification(`Le mot ${wordViewIndex + 1} a encore une occurrence principale ouverte — termine-la d'abord ("Terminer ce mot ici").`);
-            return;
-        }
-
-        if (activeExtraWordIndex !== null) {
-            // Ferme l'occurrence ouverte sur l'AUTRE mot, à cet instant —
-            // c'est ce qui chaîne une phrase répétée sur plusieurs mots.
-            const other = verse.words[activeExtraWordIndex];
-            other[other.length - 1].end = time;
-        }
-
-        verse.words[wordViewIndex].push({ start: time, end: null });
-        activeExtraWordIndex = wordViewIndex;
-        const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
-        if (!resolved) {
+        } else if (result.shrunk) {
+            notifyShrunk(result.shrunk);
+        } else {
             showNotification('Occurrence en cours — navigue au mot suivant pour l\'enchaîner, ou reclique ici pour la terminer');
         }
-
         renderWordMode();
         updateVerseList();
     });
 
     // Ferme directement la principale encore ouverte du mot affiché (seul
     // le mot le plus récemment marqué peut être dans ce cas). Équivalent
-    // manuel de ce qui se passait avant automatiquement (voir la note
-    // au-dessus de shrinkLastWordEndIfNeeded) : l'utilisateur choisit
-    // explicitement l'instant, plutôt qu'une fermeture devinée à l'avance.
+    // manuel de ce qui se passait avant automatiquement : l'utilisateur
+    // choisit explicitement l'instant, plutôt qu'une fermeture devinée à
+    // l'avance.
     terminateWordBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
-        const verse = verses[wordModeVerseIndex];
-        const primary = verse.words[wordViewIndex]?.[0];
-        if (!primary || primary.end !== null) return;
-
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
         const time = audioPlayer.currentTime;
-        primary.end = time;
+        const result = wordSession.terminateWord(time);
+        if (!result.ok) return;
         renderWordMode();
         updateVerseList();
-        showNotification(`Mot ${wordViewIndex + 1} terminé à ${time.toFixed(2)}s`);
+        showNotification(`Mot ${result.wordIndex + 1} terminé à ${time.toFixed(2)}s`);
     });
 
     // Marque une nouvelle occurrence du VERSET en cours (pas d'un mot) —
     // le cheikh répète le verset entier plus loin dans le même passage.
-    // Contourne délibérément verseMarkingLocked : n'ajoute qu'une entrée en
-    // fin de tableau `verses`, ne touche jamais verses[wordModeVerseIndex],
-    // donc aucun risque pour le verset dont on marque les mots.
     addVerseOccurrenceBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || !audioPlayer.src) return;
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
         const time = audioPlayer.currentTime;
-
-        if (pendingVerseOccurrenceIndex !== null) {
-            const pending = verses[pendingVerseOccurrenceIndex];
-            if (time <= pending.start) {
+        const result = wordSession.addOrCloseVerseOccurrence(time);
+        if (!result.ok) {
+            if (result.reason === 'end-before-start') {
                 showNotification('La fin doit être après le début de cette occurrence');
-                return;
             }
-            pending.end = time;
-            showNotification(`Occurrence du verset ${pending.id} terminée à ${time.toFixed(2)}s`);
-            pendingVerseOccurrenceIndex = null;
-            renderWordMode();
-            updateVerseList();
             return;
         }
-
-        const verse = verses[wordModeVerseIndex];
-        verses.push({ id: verse.id, start: time, end: null, words: [] });
-        pendingVerseOccurrenceIndex = verses.length - 1;
-        showNotification(`Nouvelle occurrence du verset ${verse.id} démarrée à ${time.toFixed(2)}s`);
+        showNotification(
+            result.action === 'closed'
+                ? `Occurrence du verset ${result.verseId} terminée à ${time.toFixed(2)}s`
+                : `Nouvelle occurrence du verset ${result.verseId} démarrée à ${time.toFixed(2)}s`,
+        );
         renderWordMode();
         updateVerseList();
     });
@@ -1106,78 +996,45 @@ document.addEventListener('DOMContentLoaded', function() {
     // mot suivant, au même instant — un seul clic pour enchaîner une
     // phrase répétée, sans passer par les flèches ▶ entre chaque mot.
     advanceOccurrenceBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
-        if (activeExtraWordIndex === null || activeExtraWordIndex !== wordViewIndex) return;
-        const verse = verses[wordModeVerseIndex];
-        const total = getWordList(verse.id)?.length ?? 0;
-        const targetIndex = wordViewIndex + 1;
-        if (targetIndex >= total) return;
-
-        // Garde-fou : le mot suivant ne peut recevoir une occurrence
-        // enchaînée que si sa propre principale est déjà fermée — sinon on
-        // se retrouve avec deux occurrences ouvertes en même temps sur ce
-        // mot (sa principale + celle qu'on vient d'y pousser), sans façon
-        // claire de fermer l'une sans l'autre ensuite.
-        const target = verse.words[targetIndex];
-        if (!target) {
-            showNotification(`Le mot ${targetIndex + 1} n'a pas encore d'occurrence principale — marque-le d'abord normalement.`);
-            return;
-        }
-        if (target[0].end === null) {
-            showNotification(`Le mot ${targetIndex + 1} a encore une occurrence principale ouverte — termine-la d'abord ("Terminer ce mot ici") avant d'y enchaîner une occurrence.`);
-            return;
-        }
-
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
         const time = audioPlayer.currentTime;
-        const current = verse.words[wordViewIndex];
-        current[current.length - 1].end = time;
-
-        wordViewIndex = targetIndex;
-        verse.words[wordViewIndex].push({ start: time, end: null });
-        activeExtraWordIndex = wordViewIndex;
-        const resolved = shrinkLastWordEndIfNeeded(verse, wordViewIndex, time);
-        if (!resolved) {
+        const result = wordSession.advanceOccurrence(time);
+        if (!result.ok) {
+            if (result.reason === 'target-not-marked') {
+                showNotification('Le mot suivant n\'a pas encore d\'occurrence principale — marque-le d\'abord normalement.');
+            } else if (result.reason === 'target-primary-open') {
+                showNotification('Le mot suivant a encore une occurrence principale ouverte — termine-la d\'abord ("Terminer ce mot ici") avant d\'y enchaîner une occurrence.');
+            }
+            return;
+        }
+        if (result.shrunk) {
+            notifyShrunk(result.shrunk);
+        } else {
             showNotification('Occurrence enchaînée sur le mot suivant');
         }
-
         renderWordMode();
         updateVerseList();
     });
 
     prevWordBtn.addEventListener('click', function() {
-        wordViewIndex -= 1;
+        wordSession.prev();
         renderWordMode();
     });
 
     nextWordBtn.addEventListener('click', function() {
-        wordViewIndex += 1;
+        wordSession.next();
         renderWordMode();
     });
 
     markWordBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || !audioPlayer.src) return;
-        const verse = verses[wordModeVerseIndex];
-        const wordList = getWordList(verse.id);
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
         const time = audioPlayer.currentTime;
-        const doneCount = verse.words.length;
-        if (doneCount >= wordList.length) return;
-
-        // Le clic marque le début du mot en cours. Si un mot précédent est
-        // encore ouvert (pas de end), ce même instant en marque la fin —
-        // les mots d'un verset se suivent sans blanc entre eux.
-        if (doneCount > 0) {
-            verse.words[doneCount - 1][0].end = time;
+        const currentVerseId = verses[wordSession.getCurrentIndex()].id;
+        const result = wordSession.markWord(time);
+        if (!result.ok) return;
+        if (result.allWordsMarked) {
+            showNotification(`Verset ${currentVerseId} : tous les mots sont marqués`);
         }
-
-        if (doneCount === wordList.length - 1) {
-            // Dernier mot : sa fin est déjà connue, c'est la fin du verset.
-            verse.words.push([{ start: time, end: verse.end }]);
-            showNotification(`Verset ${verse.id} : tous les mots sont marqués`);
-        } else {
-            verse.words.push([{ start: time, end: null }]);
-        }
-
-        wordViewIndex = verse.words.length;
         renderWordMode();
         updateVerseList();
     });
@@ -1189,61 +1046,39 @@ document.addEventListener('DOMContentLoaded', function() {
     // l'occurrence principale (index 0) ; les occurrences supplémentaires
     // se gèrent séparément.
     correctWordBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || wordMarkingLocked || !audioPlayer.src) return;
-        const verse = verses[wordModeVerseIndex];
-        if (wordViewIndex >= verse.words.length) return;
-
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
         const time = audioPlayer.currentTime;
-        verse.words[wordViewIndex][0].start = time;
-        if (wordViewIndex > 0) {
-            verse.words[wordViewIndex - 1][0].end = time;
-        }
-
+        const result = wordSession.correctWord(time);
+        if (!result.ok) return;
         renderWordMode();
         updateVerseList();
-        showNotification(`Début du mot ${wordViewIndex + 1} recalé à ${time.toFixed(2)}s`);
+        showNotification(`Début du mot ${result.wordIndex + 1} recalé à ${time.toFixed(2)}s`);
     });
 
     undoWordBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null) return;
-        const verse = verses[wordModeVerseIndex];
-        if (verse.words.length === 0) {
+        const result = wordSession.undoWord();
+        if (!result.ok) {
             showNotification('Aucun mot à annuler');
             return;
         }
-        verse.words.pop();
-        if (verse.words.length > 0) {
-            verse.words[verse.words.length - 1][0].end = null;
-        }
-        wordViewIndex = verse.words.length;
         renderWordMode();
         updateVerseList();
         showNotification('Dernier mot annulé');
     });
 
     closeWordModeBtn.addEventListener('click', function() {
-        if (!confirmLeavingOpenExtraOccurrence()) return;
-        if (!confirmLeavingOpenVerseOccurrence()) return;
-        closeWordMode();
+        const result = withLeaveConfirm((opts) => wordSession.requestClose(opts));
+        if (!result.ok) return;
+        applyCloseEffects();
     });
-
-    // Passe directement au mode mots du prochain verset marquable (données
-    // de mots dispo + déjà borné), sans repasser par la liste principale.
-    function findNextWordableVerseIndex(fromIndex) {
-        for (let i = fromIndex + 1; i < verses.length; i++) {
-            const v = verses[i];
-            if (getWordList(v.id) && v.end !== null) return i;
-        }
-        return -1;
-    }
 
     // Avance l'audio au début du verset suivant sans changer le verset
     // ouvert dans le panneau mots — utile pour repérer où il commence
     // (ex. pour caler la fin du dernier mot) sans perdre le contexte de
     // marquage en cours (contrairement à "Verset suivant" qui bascule dessus).
     seekNextVerseWordsBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null || !audioPlayer.src) return;
-        const nextVerse = verses[wordModeVerseIndex + 1];
+        if (!wordSession.isOpen() || !audioPlayer.src) return;
+        const nextVerse = verses[wordSession.getCurrentIndex() + 1];
         if (!nextVerse) {
             showNotification('Aucun verset suivant');
             return;
@@ -1253,16 +1088,16 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification(`Audio avancé à ${nextVerse.start.toFixed(2)}s (verset ${nextVerse.id})`);
     });
 
+    // Passe directement au mode mots du prochain verset marquable (données
+    // de mots dispo + déjà borné), sans repasser par la liste principale —
+    // la recherche et la garde vivent dans
+    // wordSession.advanceToNextWordableVerse().
     nextVerseWordsBtn.addEventListener('click', function() {
-        if (wordModeVerseIndex === null) return;
-        if (!confirmLeavingOpenExtraOccurrence()) return;
-        if (!confirmLeavingOpenVerseOccurrence()) return;
-        const nextIndex = findNextWordableVerseIndex(wordModeVerseIndex);
-        if (nextIndex === -1) {
+        const result = withLeaveConfirm((opts) => wordSession.advanceToNextWordableVerse(opts));
+        if (applyOpenResult(result)) return;
+        if (result.reason === 'no-next-verse') {
             showNotification('Aucun verset suivant marquable après celui-ci');
-            return;
         }
-        openWordMode(nextIndex);
     });
 
     // Champ `words` au format TafsirAudioTiming.words de tafsir-app, prêt à
