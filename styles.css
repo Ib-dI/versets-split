@@ -530,6 +530,10 @@ button:disabled:hover {
   outline-offset: -2px;
 }
 
+.verse-entry.words-complete {
+  border-left: 3px solid var(--success-color);
+}
+
 .verse-entry span {
   font-family: var(--font-mono);
   font-size: 14px;
@@ -646,6 +650,17 @@ textarea:focus {
 }
 
 .surah-words-status.has-words {
+  color: var(--success-color);
+}
+
+.verse-list-progress {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+
+.verse-list-progress.all-complete {
   color: var(--success-color);
 }
 

@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const wordMarkedList = document.getElementById('wordMarkedList');
     const prevWordBtn = document.getElementById('prevWordBtn');
     const nextWordBtn = document.getElementById('nextWordBtn');
+    const verseListProgress = document.getElementById('verseListProgress');
     const surahIdInput = document.getElementById('surahId');
     const surahWordsStatus = document.getElementById('surahWordsStatus');
     const existingTimingsList = document.getElementById('existingTimingsList');
@@ -131,6 +132,67 @@ document.addEventListener('DOMContentLoaded', function() {
         return WORDS_BY_SURAH[surahId]?.[verseId];
     }
 
+    // Filet de sécurité : verses[] ne vit qu'en mémoire, un refresh ou un
+    // crash d'onglet perdrait un marquage long et manuel sans ça. Le fichier
+    // audio lui-même n'est pas sauvegardé (non sérialisable proprement) —
+    // seuls son nom/sa taille le sont, pour reconnaître automatiquement
+    // qu'on recharge le même fichier (voir handleFile) et pour le rappeler
+    // à l'utilisateur au moment de la restauration. updateVerseList() est
+    // le point de passage unique après toute mutation (verset ou mot — les
+    // handlers de mots appellent aussi updateVerseList()), un seul hook y
+    // suffit donc.
+    const AUTOSAVE_KEY = 'versets-split:autosave';
+    // Déclarés ici (avant l'appel à restoreSession() plus bas) : lastFile
+    // est réassigné par handleFile une fois l'audio choisi ; restoredAudioMeta
+    // porte le nom/taille attendus tant que ce fichier n'a pas encore été
+    // rechargé après une restauration.
+    let lastFile = null;
+    let restoredAudioMeta = null;
+
+    function saveSession() {
+        try {
+            // Avant que l'audio ne soit rechargé après une restauration,
+            // lastFile est encore null — retomber sur restoredAudioMeta pour
+            // ne pas effacer l'indice de nom de fichier si la page est
+            // rechargée une deuxième fois avant que l'utilisateur n'ait eu
+            // l'occasion de resélectionner l'audio.
+            const audioMeta = lastFile
+                ? { name: lastFile.name, size: lastFile.size }
+                : restoredAudioMeta;
+            localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+                surahId: parseInt(surahIdInput.value) || 1,
+                verses,
+                audioName: audioMeta ? audioMeta.name : null,
+                audioSize: audioMeta ? audioMeta.size : null,
+            }));
+        } catch (e) {
+            // Stockage indisponible/quota dépassé — sauvegarde best-effort,
+            // ne doit jamais bloquer le marquage en cours.
+        }
+    }
+
+    function restoreSession() {
+        let saved;
+        try {
+            saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY));
+        } catch (e) {
+            return;
+        }
+        if (!saved || !Array.isArray(saved.verses) || saved.verses.length === 0) return;
+
+        surahIdInput.value = saved.surahId;
+        verseTimeline.replaceAll(saved.verses);
+        verseIdInput.value = verses[verses.length - 1].id + 1;
+        restoredAudioMeta = saved.audioName ? { name: saved.audioName, size: saved.audioSize } : null;
+        renderSurahStatus();
+        renderExistingTimingsList();
+        updateVerseList();
+        showNotification(
+            `Session précédente restaurée (${verses.length} versets)`
+            + (restoredAudioMeta ? ` — recharge ${restoredAudioMeta.name} pour continuer` : ''),
+        );
+    }
+
     function renderSurahStatus() {
         const surahId = parseInt(surahIdInput.value) || 1;
         const hasWords = Boolean(WORDS_BY_SURAH[surahId]);
@@ -190,9 +252,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     renderSurahStatus();
     renderExistingTimingsList();
-    
+    restoreSession();
+
     // Charger un fichier audio (clic ou changement input)
-    let lastFile = null;
     audioFileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) handleFile(file);
@@ -225,6 +287,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function handleFile(file) {
+        // Ne vider les versets déjà présents que si on change vraiment
+        // d'audio en cours de session (un fichier différent était déjà
+        // chargé) — pas simplement parce qu'aucun audio n'a encore été
+        // chargé cette session. Sans ça, le flux courant "Charger les
+        // timings existants d'une sourate PUIS charger l'audio
+        // correspondant" effaçait systématiquement la liste qu'on venait
+        // de charger : ces versets n'ont jamais eu d'audio associé
+        // (lastFile encore null), donc rien ne les distinguait d'un vrai
+        // changement d'audio.
+        const isSwitchingAudio = lastFile !== null
+            && (lastFile.name !== file.name || lastFile.size !== file.size);
+        restoredAudioMeta = null;
+
         lastFile = file;
         const url = URL.createObjectURL(file);
         audioPlayer.src = url;
@@ -232,11 +307,15 @@ document.addEventListener('DOMContentLoaded', function() {
         clearAudioBtn.classList.add('visible');
         fileName.textContent = file.name;
         fileMeta.textContent = `Taille: ${formatBytes(file.size)}`;
-        verseTimeline.replaceAll();
+        if (isSwitchingAudio) verseTimeline.replaceAll();
         updateVerseList();
-        showNotification('Audio chargé avec succès');
+        showNotification(
+            isSwitchingAudio
+                ? 'Audio chargé avec succès — anciens versets remis à zéro (audio différent)'
+                : 'Audio chargé avec succès',
+        );
     }
-    
+
     // Supprimer l'audio
     clearAudioBtn.addEventListener('click', function() {
         audioPlayer.src = '';
@@ -245,6 +324,8 @@ document.addEventListener('DOMContentLoaded', function() {
         clearAudioBtn.classList.remove('visible');
         fileName.textContent = 'Charger un fichier audio';
         if (fileMeta) fileMeta.textContent = '';
+        lastFile = null;
+        restoredAudioMeta = null;
         verseTimeline.replaceAll();
         updateVerseList();
         currentTimeDisplay.textContent = '0.00';
@@ -294,6 +375,29 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             togglePlayPause();
             return;
+        }
+
+        // Mode mots ouvert : « f » marque le mot en cours (au clavier plutôt
+        // qu'à la souris, pour caler l'instant exact pendant l'écoute sans
+        // lâcher les touches), « s » annule le dernier mot marqué. On ne
+        // déclenche markWordBtn que si isPendingSlot est vrai (même
+        // condition que renderWordMode() pour l'afficher) — sinon, en train
+        // de relire/corriger un mot déjà marqué (viewIndex ailleurs),
+        // markWordBtn est masqué mais reste cliquable par script : sans ce
+        // garde-fou, « f » avancerait quand même sur le mot suivant sans
+        // rapport avec ce qui est affiché à l'écran.
+        if (wordSession.isOpen()) {
+            const key = e.key.toLowerCase();
+            if (key === 'f') {
+                e.preventDefault();
+                if (wordSession.describe().isPendingSlot) markWordBtn.click();
+                return;
+            }
+            if (key === 's') {
+                e.preventDefault();
+                undoWordBtn.click();
+                return;
+            }
         }
 
         const seconds = KEY_SEEK_SECONDS[e.key.toLowerCase()];
@@ -410,19 +514,26 @@ document.addEventListener('DOMContentLoaded', function() {
     let dragSrcVerse = null;
 
     function updateVerseList() {
+        saveSession();
         verseList.innerHTML = '';
 
         if (verses.length === 0) {
             verseList.innerHTML = '<p style="text-align: center; color: #86868b; padding: 20px;">Aucun verset marqué</p>';
+            verseListProgress.textContent = '';
+            verseListProgress.classList.remove('all-complete');
             return;
         }
 
+        let completeCount = 0;
+
         verses.forEach((verse, index) => {
             const verseEntry = document.createElement('div');
-            verseEntry.className = 'verse-entry';
+            const wordList = getWordList(verse.id);
+            const wordsComplete = Boolean(wordList) && verse.words.length === wordList.length;
+            if (wordsComplete) completeCount++;
+            verseEntry.className = wordsComplete ? 'verse-entry words-complete' : 'verse-entry';
 
             const verseText = document.createElement('span');
-            const wordList = getWordList(verse.id);
             const wordsProgress = wordList ? ` — mots ${verse.words.length}/${wordList.length}` : '';
             const occ = getOccurrenceInfo(index);
             const occSuffix = occ ? ` (occurrence ${occ.position}/${occ.total})` : '';
@@ -633,6 +744,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             verseList.appendChild(verseEntry);
         });
+
+        verseListProgress.textContent = `— ${completeCount}/${verses.length} complets`;
+        verseListProgress.classList.toggle('all-complete', completeCount === verses.length);
     }
     
     // Fenêtre de confirmation commune : open()/requestClose()/
@@ -756,7 +870,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!wordSession.isOpen()) return;
         const snap = wordSession.describe();
 
-        wordModeVerseId.textContent = snap.verseId + (snap.occurrenceLabel ? ` ${snap.occurrenceLabel}` : '');
+        const versePosition = snap.verseIndex !== -1 ? ` — verset ${snap.verseIndex + 1}/${snap.verseCount}` : '';
+        wordModeVerseId.textContent = snap.verseId + (snap.occurrenceLabel ? ` ${snap.occurrenceLabel}` : '') + versePosition;
         prevWordBtn.disabled = !snap.canGoPrev;
         nextWordBtn.disabled = !snap.canGoNext;
         seekNextVerseWordsBtn.disabled = !timeSource.isReady() || !snap.hasNextVerse;

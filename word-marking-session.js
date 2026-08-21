@@ -457,11 +457,14 @@ export class WordMarkingSession {
         }
 
         const currentIndex = this.getCurrentIndex();
-        const hasNextVerse = currentIndex !== -1 && currentIndex + 1 < this.#collaborator.getVerseCount();
+        const verseCount = this.#collaborator.getVerseCount();
+        const hasNextVerse = currentIndex !== -1 && currentIndex + 1 < verseCount;
 
         return {
             isOpen: true,
             verseId: verse.id,
+            verseIndex: currentIndex,
+            verseCount,
             occurrenceLabel: occ ? `(occurrence ${occ.position}/${occ.total})` : null,
             words: wordList,
             total,
