@@ -380,7 +380,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Mode mots ouvert : « f » marque le mot en cours (au clavier plutôt
         // qu'à la souris, pour caler l'instant exact pendant l'écoute sans
-        // lâcher les touches), « s » annule le dernier mot marqué. On ne
+        // lâcher les touches), « s » annule le dernier mot marqué, « g »
+        // passe au verset suivant marquable (même effet que
+        // nextVerseWordsBtn, avec sa garde withLeaveConfirm). On ne
         // déclenche markWordBtn que si isPendingSlot est vrai (même
         // condition que renderWordMode() pour l'afficher) — sinon, en train
         // de relire/corriger un mot déjà marqué (viewIndex ailleurs),
@@ -397,6 +399,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (key === 's') {
                 e.preventDefault();
                 undoWordBtn.click();
+                return;
+            }
+            if (key === 'g') {
+                e.preventDefault();
+                nextVerseWordsBtn.click();
                 return;
             }
         }
