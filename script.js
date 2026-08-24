@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentTimeDisplay = document.getElementById('currentTime');
     const startVerseBtn = document.getElementById('startVerse');
     const endVerseBtn = document.getElementById('endVerse');
+    const normalizeBtn = document.getElementById('normalizeBtn');
     const copyAllBtn = document.getElementById('copyAll');
     const verseList = document.getElementById('verseList');
     const audioFileInput = document.getElementById('audioFile');
@@ -478,6 +479,34 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Fin de verset marquée');
     });
     
+    // Normaliser : aligne la fin de chaque verset sur le début du suivant
+    // (comble les trous, résorbe les chevauchements). Confirmation
+    // préalable seulement si ça va vider des mots déjà marqués — même
+    // invariant que l'édition manuelle d'une borne (setBoundary).
+    normalizeBtn.addEventListener('click', function() {
+        const changes = verseTimeline.previewNormalization();
+        if (changes.length === 0) {
+            showNotification('Tous les versets sont déjà alignés');
+            return;
+        }
+
+        const withWords = changes.filter((c) => c.hadWords);
+        if (withWords.length > 0) {
+            const confirmed = window.confirm(
+                `Normaliser va décaler ${changes.length} fin${changes.length > 1 ? 's' : ''} de verset ` +
+                `et vider les mots déjà marqués de ${withWords.length} verset${withWords.length > 1 ? 's' : ''}. Continuer ?`
+            );
+            if (!confirmed) return;
+        }
+
+        const touchesOpenWordMode = changes.some((c) => c.index === wordSession.getCurrentIndex());
+        verseTimeline.applyNormalization(changes);
+        if (touchesOpenWordMode) forceCloseWordMode();
+
+        updateVerseList();
+        showNotification(`${changes.length} fin${changes.length > 1 ? 's' : ''} de verset alignée${changes.length > 1 ? 's' : ''}`);
+    });
+
     // Copier tous les versets
     copyAllBtn.addEventListener('click', function() {
         if (verses.length === 0) {

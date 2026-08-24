@@ -456,6 +456,17 @@ button {
   box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
 }
 
+.normalize-btn {
+  background: var(--secondary-color);
+  color: var(--white);
+}
+
+.normalize-btn:hover {
+  background: var(--primary-color);
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(63, 55, 201, 0.3);
+}
+
 button:active {
   transform: scale(0.98);
 }

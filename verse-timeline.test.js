@@ -146,6 +146,63 @@ test('getOccurrenceInfo renvoie null pour un verset sans occurrence sœur', () =
     assert.equal(vt.getOccurrenceInfo(a), null);
 });
 
+test('previewNormalization détecte un trou et propose de l\'aligner', () => {
+    const vt = new VerseTimeline();
+    vt.startVerse(1, 0); vt.endVerse(9.5);
+    vt.startVerse(2, 10); vt.endVerse(20);
+
+    const changes = vt.previewNormalization();
+    assert.deepEqual(changes, [{ index: 0, from: 9.5, to: 10, hadWords: false }]);
+});
+
+test('previewNormalization détecte un chevauchement et propose de l\'aligner', () => {
+    const vt = new VerseTimeline();
+    vt.startVerse(1, 0); vt.endVerse(10.5);
+    vt.startVerse(2, 10); vt.endVerse(20);
+
+    const changes = vt.previewNormalization();
+    assert.deepEqual(changes, [{ index: 0, from: 10.5, to: 10, hadWords: false }]);
+});
+
+test('previewNormalization ignore les écarts sous la tolérance', () => {
+    const vt = new VerseTimeline();
+    vt.startVerse(1, 0); vt.endVerse(10.005);
+    vt.startVerse(2, 10); vt.endVerse(20);
+
+    assert.deepEqual(vt.previewNormalization(0.01), []);
+});
+
+test('previewNormalization ne touche pas au dernier verset (pas de suivant)', () => {
+    const vt = new VerseTimeline();
+    vt.startVerse(1, 0); vt.endVerse(10);
+    vt.startVerse(2, 10);
+
+    assert.deepEqual(vt.previewNormalization(), []);
+});
+
+test('previewNormalization signale hadWords pour un verset dont les mots seraient perdus', () => {
+    const vt = new VerseTimeline();
+    vt.startVerse(1, 0); vt.endVerse(9);
+    vt.getVerse(0).words = [[{ start: 0, end: 9 }]];
+    vt.startVerse(2, 10); vt.endVerse(20);
+
+    const changes = vt.previewNormalization();
+    assert.equal(changes[0].hadWords, true);
+});
+
+test('applyNormalization aligne les fins et vide les mots dépendants', () => {
+    const vt = new VerseTimeline();
+    vt.startVerse(1, 0); vt.endVerse(9);
+    vt.getVerse(0).words = [[{ start: 0, end: 9 }]];
+    vt.startVerse(2, 10); vt.endVerse(20);
+
+    vt.applyNormalization(vt.previewNormalization());
+
+    assert.equal(vt.getVerse(0).end, 10);
+    assert.deepEqual(vt.getVerse(0).words, []);
+    assert.equal(vt.getVerse(1).end, 20); // dernier verset : inchangé
+});
+
 test('serializeVerse : fin absente affichée "?", 0.00s légitime affiché tel quel', () => {
     const vt = new VerseTimeline();
     vt.startVerse(5, 1.5);

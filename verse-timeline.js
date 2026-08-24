@@ -145,6 +145,32 @@ export class VerseTimeline {
         return `, words: [${items}]`;
     }
 
+    // Calcule (sans muter) les corrections que "Normaliser" appliquerait :
+    // pour chaque paire consécutive, la fin doit rejoindre le début du
+    // verset suivant — trou ou chevauchement, même règle. Ignore les
+    // écarts sous la tolérance (bruit flottant, invisible à 2 décimales)
+    // pour ne pas vider inutilement des mots déjà marqués. Séparé de
+    // l'application pour permettre une confirmation avant mutation quand
+    // des mots seraient perdus.
+    previewNormalization(tolerance = 0.01) {
+        const changes = [];
+        for (let i = 0; i < this.#verses.length - 1; i++) {
+            const verse = this.#verses[i];
+            const nextStart = this.#verses[i + 1].start;
+            if (Math.abs(verse.end - nextStart) > tolerance) {
+                changes.push({ index: i, from: verse.end, to: nextStart, hadWords: verse.words.length > 0 });
+            }
+        }
+        return changes;
+    }
+
+    // Applique les corrections calculées par previewNormalization — via
+    // setBoundary pour garder l'invariant "borne éditée => mots dépendants
+    // vidés" (le dernier mot était calé sur l'ancienne fin par valeur).
+    applyNormalization(changes) {
+        changes.forEach(({ index, to }) => this.setBoundary(index, 'end', to));
+    }
+
     // Fragment `{ id, startTime, endTime, words? }` d'un verset, sans
     // virgule finale ni emballage — les appelants (copie d'une ligne, copie
     // groupée, export) ajoutent chacun leur propre ponctuation autour.
