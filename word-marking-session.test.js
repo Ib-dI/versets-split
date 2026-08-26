@@ -103,6 +103,91 @@ test('terminateWord ferme la principale ouverte du mot affiché', () => {
     assert.equal(verses[0].words[0][0].end, 1.8);
 });
 
+test('setWordTime(start) déplace la fin du mot précédent (édition depuis la liste, pas forcément le mot affiché)', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.setViewIndex(0); // le mot affiché n'est PAS celui qu'on édite
+
+    const r = session.setWordTime(1, 'start', 2.5);
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[1][0].start, 2.5);
+    assert.equal(verses[0].words[0][0].end, 2.5);
+});
+
+test('setWordTime(start) sur le premier mot ne touche à rien d\'autre (pas de mot précédent)', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+
+    const r = session.setWordTime(0, 'start', 0.5);
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][0].start, 0.5);
+});
+
+test('setWordTime(end) déplace le début du mot suivant', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15); // 3 mots marqués, tous fermés (dernier calé sur verse.end)
+
+    const r = session.setWordTime(0, 'end', 1.5);
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][0].end, 1.5);
+    assert.equal(verses[0].words[1][0].start, 1.5);
+});
+
+test('setWordTime(end) sur le dernier mot se découple de verse.end', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15); // dernier mot calé sur verse.end (30) par défaut
+
+    const r = session.setWordTime(2, 'end', 25);
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[2][0].end, 25);
+    assert.equal(verses[0].end, 30); // verse.end inchangé
+});
+
+test('setWordTime refuse un index hors des mots déjà marqués', () => {
+    const { session } = openVerse();
+    session.markWord(1);
+    const r = session.setWordTime(5, 'start', 1);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'no-word-at-index');
+});
+
+test('setExtraOccurrenceTime édite une occurrence par (wordIndex, extraIndex) sans toucher aux voisines', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15);
+
+    session.setViewIndex(0);
+    session.toggleExtraOccurrence(10); // ouvre une occurrence sur le mot 0
+    session.toggleExtraOccurrence(10.5); // la referme
+
+    const r = session.setExtraOccurrenceTime(0, 0, 'start', 12);
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][1].start, 12);
+    assert.equal(verses[0].words[0][1].end, 10.5); // fin de cette occurrence inchangée
+    assert.equal(verses[0].words[0][0].end, 2); // principale du mot 0 inchangée (pas de chaînage)
+});
+
+test('setExtraOccurrenceTime refuse une occurrence inexistante', () => {
+    const { session } = openVerse();
+    session.markWord(1);
+    const r = session.setExtraOccurrenceTime(0, 0, 'start', 1);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'no-occurrence-at-index');
+});
+
+test('describe() expose verseStart/verseEnd du verset en cours de marquage', () => {
+    const { session } = openVerse();
+    const snap = session.describe();
+    assert.equal(snap.verseStart, 0);
+    assert.equal(snap.verseEnd, 30);
+});
+
 test('undoWord retire le dernier mot et rouvre le précédent', () => {
     const { session, verses } = openVerse();
     session.markWord(1);

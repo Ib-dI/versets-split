@@ -138,6 +138,15 @@ h1 {
   box-shadow: 0 6px 20px rgba(0, 122, 255, 0.08);
 }
 
+/* Fichier déjà chargé : distinct de l'état vide "dépose un fichier ici" —
+   bordure pleine teintée succès plutôt que pointillés, pour ne pas laisser
+   croire qu'il n'y a rien de chargé. */
+.file-drop-zone.has-file {
+  border-style: solid;
+  border-color: var(--success-color);
+  background: linear-gradient(180deg, rgba(52, 199, 89, 0.1), rgba(52, 199, 89, 0.04));
+}
+
 .file-drop-zone input[type="file"] {
   position: absolute;
   inset: 0;
@@ -151,6 +160,19 @@ h1 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.file-icon-loaded {
+  display: none;
+}
+
+.file-drop-zone.has-file .file-icon-empty {
+  display: none;
+}
+
+.file-drop-zone.has-file .file-icon-loaded {
+  display: inline-flex;
+  color: var(--success-color);
 }
 
 .file-info {
@@ -730,6 +752,28 @@ textarea:focus {
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: 0;
+}
+
+.word-mode-verse-times {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+
+.word-mode-playhead {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary-color);
+  background: rgba(67, 97, 238, 0.1);
+  padding: 4px 10px;
+  border-radius: var(--border-radius-sm);
+}
+
+.dark-mode .word-mode-playhead {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* Actions occasionnelles liées à l'en-tête du panneau mots (occurrence de

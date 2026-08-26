@@ -257,6 +257,55 @@ export class WordMarkingSession {
         return { ok: true, wordIndex: this.#wordViewIndex };
     }
 
+    // Édite directement le début ou la fin d'un mot déjà marqué, à un index
+    // arbitraire (pas forcément le mot affiché dans le carrousel) — pour
+    // l'édition depuis la liste plutôt que mot par mot avec "Recaler"/
+    // "Terminer". Ne touche que l'occurrence principale (index 0).
+    //
+    // Même règle de chaînage que correctWord()/terminateWord() : les mots
+    // d'un verset se suivent sans blanc, donc modifier une des deux bornes
+    // d'une frontière entre deux mots déplace l'autre borne au même
+    // instant. Exception : la fin du dernier mot n'a pas de mot suivant
+    // avec qui chaîner — elle se découple de verse.end (ce n'était qu'une
+    // valeur par défaut, pas une vraie observation).
+    setWordTime(wordIndex, field, time) {
+        if (!this.isOpen()) return { ok: false, reason: 'not-open' };
+        const verse = this.#verseRef;
+        if (wordIndex < 0 || wordIndex >= verse.words.length) {
+            return { ok: false, reason: 'no-word-at-index' };
+        }
+
+        const primary = verse.words[wordIndex][0];
+        if (field === 'start') {
+            primary.start = time;
+            if (wordIndex > 0) {
+                verse.words[wordIndex - 1][0].end = time;
+            }
+        } else {
+            primary.end = time;
+            if (verse.words.length > wordIndex + 1) {
+                verse.words[wordIndex + 1][0].start = time;
+            }
+        }
+        return { ok: true };
+    }
+
+    // Édite directement le début ou la fin d'une occurrence supplémentaire
+    // déjà marquée, par (wordIndex, extraIndex) — sans chaînage avec les
+    // occurrences voisines : contrairement aux mots principaux, les
+    // occurrences supplémentaires ne sont pas forcément consécutives dans
+    // l'audio (le cheikh peut répéter un mot bien plus tard).
+    setExtraOccurrenceTime(wordIndex, extraIndex, field, time) {
+        if (!this.isOpen()) return { ok: false, reason: 'not-open' };
+        const occurrences = this.#verseRef.words[wordIndex];
+        if (!occurrences) return { ok: false, reason: 'no-word-at-index' };
+        const occurrence = occurrences[extraIndex + 1]; // +1 : l'index 0 est la principale
+        if (!occurrence) return { ok: false, reason: 'no-occurrence-at-index' };
+
+        occurrence[field] = time;
+        return { ok: true };
+    }
+
     undoWord() {
         if (!this.isOpen()) return { ok: false, reason: 'not-open' };
         const verse = this.#verseRef;
@@ -463,6 +512,8 @@ export class WordMarkingSession {
         return {
             isOpen: true,
             verseId: verse.id,
+            verseStart: verse.start,
+            verseEnd: verse.end,
             verseIndex: currentIndex,
             verseCount,
             occurrenceLabel: occ ? `(occurrence ${occ.position}/${occ.total})` : null,

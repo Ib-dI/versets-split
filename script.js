@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const clearAudioBtn = document.getElementById('clearAudio');
     const fileName = document.getElementById('fileName');
     const fileMeta = document.getElementById('fileMeta');
+    const fileHint = document.getElementById('fileHint');
     const audioDropZone = document.getElementById('audioDropZone');
     const exportBtn = document.getElementById('exportBtn');
     const exportText = document.getElementById('exportText');
@@ -39,6 +40,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const pauseIcon = playPauseBtn.querySelector('.pause-icon');
     const wordModeSection = document.getElementById('wordModeSection');
     const wordModeVerseId = document.getElementById('wordModeVerseId');
+    const wordModeVerseTimes = document.getElementById('wordModeVerseTimes');
+    const wordModePlayhead = document.getElementById('wordModePlayhead');
     const wordProgress = document.getElementById('wordProgress');
     const wordCarousel = document.getElementById('wordCarousel');
     const wordCarouselTrack = document.getElementById('wordCarouselTrack');
@@ -306,6 +309,8 @@ document.addEventListener('DOMContentLoaded', function() {
         audioPlayer.src = url;
         audioWrapper.style.display = 'block';
         clearAudioBtn.classList.add('visible');
+        audioDropZone.classList.add('has-file');
+        fileHint.textContent = 'Cliquer pour changer de fichier';
         fileName.textContent = file.name;
         fileMeta.textContent = `Taille: ${formatBytes(file.size)}`;
         if (isSwitchingAudio) verseTimeline.replaceAll();
@@ -323,6 +328,8 @@ document.addEventListener('DOMContentLoaded', function() {
         audioFileInput.value = '';
         audioWrapper.style.display = 'none';
         clearAudioBtn.classList.remove('visible');
+        audioDropZone.classList.remove('has-file');
+        fileHint.textContent = 'Glisser-déposer un fichier ici ou cliquez pour choisir';
         fileName.textContent = 'Charger un fichier audio';
         if (fileMeta) fileMeta.textContent = '';
         lastFile = null;
@@ -330,6 +337,7 @@ document.addEventListener('DOMContentLoaded', function() {
         verseTimeline.replaceAll();
         updateVerseList();
         currentTimeDisplay.textContent = '0.00';
+        wordModePlayhead.textContent = '⏱ 0.00';
         showNotification('Audio supprimé');
     });
     
@@ -442,14 +450,28 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function updateTimeDisplay() {
-        currentTimeDisplay.textContent = timeSource.now().toFixed(2);
+        const time = timeSource.now().toFixed(2);
+        currentTimeDisplay.textContent = time;
+        // Dupliqué dans l'en-tête du mode mots : le panneau principal ⏱ est
+        // scrollé hors champ une fois le mode mots ouvert plus bas dans la
+        // page (voir wordModeSection.scrollIntoView dans openWordMode).
+        wordModePlayhead.textContent = `⏱ ${time}`;
+    }
+
+    // Format m:ss — seulement pour la durée totale du fichier (repère
+    // grossier pour l'utilisateur) : les temps de verset/mot restent en
+    // secondes brutes partout ailleurs, la précision au centième y compte.
+    function formatDuration(totalSeconds) {
+        const rounded = Math.round(totalSeconds);
+        const minutes = Math.floor(rounded / 60);
+        const seconds = rounded % 60;
+        return `${minutes}:${String(seconds).padStart(2, '0')}`;
     }
 
     // Afficher la durée une fois les métadonnées chargées
     audioPlayer.addEventListener('loadedmetadata', function() {
         if (fileMeta && audioPlayer.duration) {
-            const dur = audioPlayer.duration.toFixed(2);
-            fileMeta.textContent = `Durée: ${dur}s` + (lastFile ? ` • ${formatBytes(lastFile.size)}` : '');
+            fileMeta.textContent = `Durée: ${formatDuration(audioPlayer.duration)}` + (lastFile ? ` • ${formatBytes(lastFile.size)}` : '');
         }
     });
 
@@ -549,6 +571,85 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let dragSrcVerse = null;
 
+    // Widget générique "cliquer un temps pour le modifier" : partagé entre
+    // la liste des versets, la liste des mots et la liste des occurrences
+    // supplémentaires plutôt que réimplémenté trois fois. Ne connaît rien
+    // du domaine (verset/mot/occurrence) — `onCommit`/`onCancel` portent
+    // toute la logique propre à l'appelant.
+    function createEditableTimeSpan({ value, title, onCommit, onCancel }) {
+        const span = document.createElement('span');
+        span.className = 'editable-time';
+        span.textContent = value !== null && value !== undefined ? value.toFixed(2) : '?';
+        span.title = title || 'Cliquer pour saisir une valeur ou reprendre la position audio actuelle';
+        span.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            const wrapper = document.createElement('span');
+            wrapper.className = 'editable-time-editing';
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.step = '0.01';
+            input.min = '0';
+            input.className = 'editable-time-input';
+            input.value = value !== null && value !== undefined ? value.toFixed(2) : '';
+
+            const nowBtn = document.createElement('button');
+            nowBtn.type = 'button';
+            nowBtn.className = 'editable-time-now-btn';
+            nowBtn.textContent = '⏱';
+            nowBtn.title = 'Remplir avec la position audio actuelle';
+            // Empêche le mousedown de voler le focus du champ (donc d'en
+            // déclencher le blur) avant que le clic ne s'exécute.
+            nowBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
+            nowBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (!timeSource.isReady()) {
+                    showNotification('Charge d\'abord un fichier audio');
+                    return;
+                }
+                input.value = timeSource.now().toFixed(2);
+                input.focus();
+            });
+
+            let settled = false;
+            function commit() {
+                if (settled) return;
+                settled = true;
+                const parsed = parseFloat(input.value);
+                if (Number.isNaN(parsed) || parsed < 0) {
+                    showNotification('Valeur invalide — modification annulée');
+                    onCancel();
+                    return;
+                }
+                onCommit(parsed);
+            }
+            function cancel() {
+                if (settled) return;
+                settled = true;
+                onCancel();
+            }
+
+            input.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+                else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+            });
+            input.addEventListener('blur', () => {
+                setTimeout(() => {
+                    if (document.activeElement !== input) commit();
+                }, 0);
+            });
+            input.addEventListener('click', (ev) => ev.stopPropagation());
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(nowBtn);
+            span.replaceWith(wrapper);
+            input.focus();
+            input.select();
+        });
+        return span;
+    }
+
     function updateVerseList() {
         saveSession();
         verseList.innerHTML = '';
@@ -594,81 +695,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             function makeEditableTime(field, label) {
-                const span = document.createElement('span');
-                span.className = 'editable-time';
-                span.textContent = verse[field] !== null && verse[field] !== undefined
-                    ? verse[field].toFixed(2)
-                    : '?';
-                span.title = 'Cliquer pour saisir une valeur ou reprendre la position audio actuelle';
-                span.addEventListener('click', (e) => {
-                    e.stopPropagation();
-
-                    const wrapper = document.createElement('span');
-                    wrapper.className = 'editable-time-editing';
-
-                    const input = document.createElement('input');
-                    input.type = 'number';
-                    input.step = '0.01';
-                    input.min = '0';
-                    input.className = 'editable-time-input';
-                    input.value = verse[field] !== null && verse[field] !== undefined
-                        ? verse[field].toFixed(2)
-                        : '';
-
-                    const nowBtn = document.createElement('button');
-                    nowBtn.type = 'button';
-                    nowBtn.className = 'editable-time-now-btn';
-                    nowBtn.textContent = '⏱';
-                    nowBtn.title = 'Remplir avec la position audio actuelle';
-                    // Empêche le mousedown de voler le focus du champ (donc
-                    // d'en déclencher le blur) avant que le clic ne s'exécute.
-                    nowBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
-                    nowBtn.addEventListener('click', (ev) => {
-                        ev.stopPropagation();
-                        if (!timeSource.isReady()) {
-                            showNotification('Charge d\'abord un fichier audio');
-                            return;
-                        }
-                        input.value = timeSource.now().toFixed(2);
-                        input.focus();
-                    });
-
-                    let settled = false;
-                    function commit() {
-                        if (settled) return;
-                        settled = true;
-                        const value = parseFloat(input.value);
-                        if (Number.isNaN(value) || value < 0) {
-                            showNotification('Valeur invalide — modification annulée');
-                            updateVerseList();
-                            return;
-                        }
-                        commitTimeEdit(field, label, value);
-                    }
-                    function cancel() {
-                        if (settled) return;
-                        settled = true;
-                        updateVerseList();
-                    }
-
-                    input.addEventListener('keydown', (ev) => {
-                        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-                        else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
-                    });
-                    input.addEventListener('blur', () => {
-                        setTimeout(() => {
-                            if (document.activeElement !== input) commit();
-                        }, 0);
-                    });
-                    input.addEventListener('click', (ev) => ev.stopPropagation());
-
-                    wrapper.appendChild(input);
-                    wrapper.appendChild(nowBtn);
-                    span.replaceWith(wrapper);
-                    input.focus();
-                    input.select();
+                return createEditableTimeSpan({
+                    value: verse[field],
+                    onCommit: (time) => commitTimeEdit(field, label, time),
+                    onCancel: () => updateVerseList(),
                 });
-                return span;
             }
 
             verseText.appendChild(document.createTextNode(`{ id: ${verse.id}, startTime: `));
@@ -870,6 +901,40 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Édition directe d'un temps de mot depuis la liste (voir setWordTime
+    // dans word-marking-session.js pour la règle de chaînage avec le mot
+    // voisin).
+    function commitWordTime(wordIndex, field, time) {
+        const result = wordSession.setWordTime(wordIndex, field, time);
+        if (!result.ok) {
+            showNotification('Modification impossible');
+            renderWordMode();
+            return;
+        }
+        renderWordMode();
+        updateVerseList();
+        showNotification(
+            `Mot ${wordIndex + 1} : ${field === 'start' ? 'début' : 'fin'} réglé(e) à ${time.toFixed(2)}s`,
+        );
+    }
+
+    // Édition directe d'un temps d'occurrence supplémentaire depuis sa
+    // liste (indépendante des occurrences voisines, voir
+    // setExtraOccurrenceTime dans word-marking-session.js).
+    function commitExtraOccurrenceTime(wordIndex, extraIndex, field, time) {
+        const result = wordSession.setExtraOccurrenceTime(wordIndex, extraIndex, field, time);
+        if (!result.ok) {
+            showNotification('Modification impossible');
+            renderWordMode();
+            return;
+        }
+        renderWordMode();
+        updateVerseList();
+        showNotification(
+            `Occurrence ${extraIndex + 1} : ${field === 'start' ? 'début' : 'fin'} réglé(e) à ${time.toFixed(2)}s`,
+        );
+    }
+
     // Affiche tous les mots du verset (pas seulement le mot courant) dans
     // une bande défilante, avec le mot actif toujours recentré — pour voir
     // les mots voisins pendant le marquage, sans changer le comportement
@@ -908,6 +973,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const versePosition = snap.verseIndex !== -1 ? ` — verset ${snap.verseIndex + 1}/${snap.verseCount}` : '';
         wordModeVerseId.textContent = snap.verseId + (snap.occurrenceLabel ? ` ${snap.occurrenceLabel}` : '') + versePosition;
+        wordModeVerseTimes.textContent =
+            `· ${snap.verseStart.toFixed(2)} → ${snap.verseEnd !== null ? snap.verseEnd.toFixed(2) : '?'}`;
         prevWordBtn.disabled = !snap.canGoPrev;
         nextWordBtn.disabled = !snap.canGoNext;
         seekNextVerseWordsBtn.disabled = !timeSource.isReady() || !snap.hasNextVerse;
@@ -943,29 +1010,57 @@ document.addEventListener('DOMContentLoaded', function() {
             terminateWordBtn.style.display = snap.primary.open ? '' : 'none';
             terminateWordBtn.disabled = snap.wordMarkingLocked;
             extraOccurrencesSection.style.display = snap.primary.open ? 'none' : '';
-            if (!snap.primary.open) renderExtraOccurrences(snap.extra);
+            if (!snap.primary.open) renderExtraOccurrences(snap.extra, snap.viewIndex);
         }
 
         // Chaque ligne est cliquable (pas seulement le numéro visuellement,
         // toute la ligne pour une cible plus facile) : place directement
         // wordViewIndex dessus, équivalent à cliquer ◀/▶ plusieurs fois mais
-        // en un clic — pour corriger un mot déjà marqué sans naviguer pas à
-        // pas depuis la position courante.
-        wordMarkedList.innerHTML = snap.markedWords
-            .map((w) => {
-                const extraSuffix = w.extraCount > 0 ? ` (+${w.extraCount} occurrence${w.extraCount > 1 ? 's' : ''})` : '';
-                // <bdi> isole le mot arabe : sans ça, Chrome réordonne
-                // visuellement toute la ligne (nombres et tiret compris)
-                // autour du texte RTL, même avec dir="ltr" sur le conteneur.
-                return `<div class="word-marked-row${w.isActive ? ' active' : ''}" data-index="${w.index}" title="Revoir/corriger ce mot">${w.isActive ? '→ ' : '　'}${w.index + 1}. <bdi>${w.arabic}</bdi> — ${w.start.toFixed(2)} → ${w.end !== null ? w.end.toFixed(2) : '?'}${extraSuffix}</div>`;
-            })
-            .join('');
+        // en un clic — pour revoir un mot déjà marqué sans naviguer pas à
+        // pas depuis la position courante. Les temps eux-mêmes sont en plus
+        // directement éditables (comme la liste des versets) : cliquer
+        // dessus arrête la propagation avant d'atteindre ce handler de
+        // ligne, donc les deux interactions ne se marchent pas dessus.
+        wordMarkedList.innerHTML = '';
+        snap.markedWords.forEach((w) => {
+            const row = document.createElement('div');
+            row.className = 'word-marked-row' + (w.isActive ? ' active' : '');
+            row.title = 'Cliquer sur le mot pour le revoir, sur un temps pour le modifier';
 
-        wordMarkedList.querySelectorAll('.word-marked-row').forEach((row) => {
+            row.appendChild(document.createTextNode(w.isActive ? '→ ' : '　'));
+            row.appendChild(document.createTextNode(`${w.index + 1}. `));
+            // <bdi> isole le mot arabe : sans ça, Chrome réordonne
+            // visuellement toute la ligne (nombres et tiret compris)
+            // autour du texte RTL, même avec dir="ltr" sur le conteneur.
+            const bdi = document.createElement('bdi');
+            bdi.textContent = w.arabic;
+            row.appendChild(bdi);
+            row.appendChild(document.createTextNode(' — '));
+            row.appendChild(createEditableTimeSpan({
+                value: w.start,
+                title: 'Cliquer pour modifier le début de ce mot',
+                onCommit: (time) => commitWordTime(w.index, 'start', time),
+                onCancel: () => renderWordMode(),
+            }));
+            row.appendChild(document.createTextNode(' → '));
+            row.appendChild(createEditableTimeSpan({
+                value: w.end,
+                title: 'Cliquer pour modifier la fin de ce mot',
+                onCommit: (time) => commitWordTime(w.index, 'end', time),
+                onCancel: () => renderWordMode(),
+            }));
+            if (w.extraCount > 0) {
+                row.appendChild(document.createTextNode(
+                    ` (+${w.extraCount} occurrence${w.extraCount > 1 ? 's' : ''})`,
+                ));
+            }
+
             row.addEventListener('click', () => {
-                wordSession.setViewIndex(parseInt(row.dataset.index, 10));
+                wordSession.setViewIndex(w.index);
                 renderWordMode();
             });
+
+            wordMarkedList.appendChild(row);
         });
 
         // Garde le mot le plus pertinent toujours visible — sans ça, une
@@ -993,7 +1088,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // terminer. `extra` vient de wordSession.describe() : le calcul "quoi
     // afficher" est déjà fait, cette fonction ne fait que peindre et câbler
     // les événements DOM.
-    function renderExtraOccurrences(extra) {
+    function renderExtraOccurrences(extra, wordIndex) {
         toggleExtraOccurrenceBtn.textContent = extra.toggleLabel;
         toggleExtraOccurrenceBtn.disabled = wordSession.isWordMarkingLocked();
 
@@ -1016,9 +1111,45 @@ document.addEventListener('DOMContentLoaded', function() {
         // reorderExtraOccurrence dans word-marking-session.js).
         const canReorder = extra.canReorder;
 
-        extraOccurrencesList.innerHTML = extra.items.length === 0
-            ? '<span style="color: var(--text-secondary); font-size: 13px;">Aucune occurrence supplémentaire</span>'
-            : extra.items.map((e, i) => `<span class="extra-occurrence-row" data-extra-index="${i}"${canReorder ? ' draggable="true" title="Glisser pour réordonner"' : ''}>${i + 1}. ${e.start.toFixed(2)} → ${e.end !== null ? e.end.toFixed(2) : '…'}<button type="button" class="remove-extra-btn" data-extra-index="${i}" title="Supprimer">×</button></span>`).join('');
+        extraOccurrencesList.innerHTML = '';
+        if (extra.items.length === 0) {
+            const empty = document.createElement('span');
+            empty.style.color = 'var(--text-secondary)';
+            empty.style.fontSize = '13px';
+            empty.textContent = 'Aucune occurrence supplémentaire';
+            extraOccurrencesList.appendChild(empty);
+        }
+        extra.items.forEach((e, i) => {
+            const row = document.createElement('span');
+            row.className = 'extra-occurrence-row';
+            row.dataset.extraIndex = String(i);
+            if (canReorder) {
+                row.draggable = true;
+                row.title = 'Glisser pour réordonner';
+            }
+            row.appendChild(document.createTextNode(`${i + 1}. `));
+            row.appendChild(createEditableTimeSpan({
+                value: e.start,
+                title: 'Cliquer pour modifier le début de cette occurrence',
+                onCommit: (time) => commitExtraOccurrenceTime(wordIndex, i, 'start', time),
+                onCancel: () => renderWordMode(),
+            }));
+            row.appendChild(document.createTextNode(' → '));
+            row.appendChild(createEditableTimeSpan({
+                value: e.end,
+                title: 'Cliquer pour modifier la fin de cette occurrence',
+                onCommit: (time) => commitExtraOccurrenceTime(wordIndex, i, 'end', time),
+                onCancel: () => renderWordMode(),
+            }));
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'remove-extra-btn';
+            removeBtn.dataset.extraIndex = String(i);
+            removeBtn.title = 'Supprimer';
+            removeBtn.textContent = '×';
+            row.appendChild(removeBtn);
+            extraOccurrencesList.appendChild(row);
+        });
 
         extraOccurrencesList.querySelectorAll('.remove-extra-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
