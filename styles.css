@@ -1,5 +1,21 @@
 @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap");
 
+/* Polices coraniques locales (fichiers dans fonts/) — sélectionnables via
+   le menu du panneau mots. DigitalKhatt (.otf, ~440 Ko) n'est téléchargée
+   que si on la choisit : le navigateur ne charge une police qu'au premier
+   glyphe qui en a besoin. */
+@font-face {
+  font-family: "Uthmanic Hafs";
+  src: url("fonts/UthmanicHafs1Ver18.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DigitalKhatt";
+  src: url("fonts/DigitalKhattQuranicV1.otf") format("opentype");
+  font-display: swap;
+}
+
 /* Variables CSS */
 :root {
   /* Couleurs mode clair */
@@ -42,6 +58,15 @@
 :root {
   --font-primary: "Geist", "SF Pro Display", "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", monospace;
+  /* Texte coranique du panneau mots. L'attribut data-quran-font posé sur
+     <html> bascule ce choix ; jamais de repli monospace (les polices
+     latines à chasse fixe ne façonnent pas l'arabe). Défaut : Uthmanic
+     Hafs, la police faite pour la segmentation QPC de nos données. */
+  --font-quran: "Uthmanic Hafs", "DigitalKhatt", serif;
+}
+
+:root[data-quran-font="khatt"] {
+  --font-quran: "DigitalKhatt", "Uthmanic Hafs", serif;
 }
 
 /* Espacements */
@@ -776,6 +801,26 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.quran-font-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.quran-font-select {
+  font-family: var(--font-primary);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: var(--border-radius-sm);
+  border: 1.5px solid var(--border-color);
+  background: var(--card-bg-color);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
 /* Actions occasionnelles liées à l'en-tête du panneau mots (occurrence de
    verset, seek au verset suivant) — volontairement plus discrètes que les
    gros boutons d'action de word-mode-actions : ce ne sont pas des étapes du
@@ -837,7 +882,10 @@ textarea:focus {
   flex: 1;
   position: relative;
   overflow: hidden;
-  padding: var(--padding-lg) 0;
+  /* Marge verticale un peu plus large que le reste : les polices
+     coraniques empilent les diacritiques haut et bas, sinon `overflow:
+     hidden` les rogne. */
+  padding: calc(var(--padding-lg) + 16px) 0;
   background: rgba(67, 97, 238, 0.06);
   border-radius: var(--border-radius-lg);
 }
@@ -856,11 +904,13 @@ textarea:focus {
      y compris le tout premier ou le tout dernier du verset. */
   padding-inline: 50%;
   white-space: nowrap;
+  line-height: 1.8;
   transition: transform 0.25s ease-out;
 }
 
 .carousel-word {
-  font-size: 1.3rem;
+  font-family: var(--font-quran);
+  font-size: 1.75rem;
   color: var(--text-secondary);
   opacity: 0.5;
   transition:
@@ -870,7 +920,7 @@ textarea:focus {
 }
 
 .carousel-word.active {
-  font-size: 2.3rem;
+  font-size: 3.1rem;
   font-weight: 600;
   color: var(--text-color);
   opacity: 1;
@@ -889,8 +939,18 @@ textarea:focus {
   font-size: 13px;
   color: var(--text-secondary);
   text-align: left;
+  line-height: 2;
   max-height: 120px;
   overflow-y: auto;
+}
+
+/* Seul le mot arabe passe à la police coranique ; l'index et les temps
+   éditables de la ligne restent en chasse fixe. Léger agrandissement :
+   13px est illisible pour de l'arabe vocalisé. */
+.word-marked-row bdi {
+  font-family: var(--font-quran);
+  font-size: 1.5em;
+  vertical-align: -0.2em;
 }
 
 .word-marked-row {

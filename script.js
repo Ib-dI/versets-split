@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const wordModeVerseTimes = document.getElementById('wordModeVerseTimes');
     const wordModePlayhead = document.getElementById('wordModePlayhead');
     const wordProgress = document.getElementById('wordProgress');
+    const quranFontSelect = document.getElementById('quranFontSelect');
     const wordCarousel = document.getElementById('wordCarousel');
     const wordCarouselTrack = document.getElementById('wordCarouselTrack');
     const markWordBtn = document.getElementById('markWordBtn');
@@ -128,6 +129,47 @@ document.addEventListener('DOMContentLoaded', function() {
 
     renderVerseLock();
     renderWordLock();
+
+    // Police du texte coranique dans le panneau mots (carrousel + liste des
+    // mots marqués). Préférence d'affichage pure : persistée sous sa propre
+    // clé, hors du blob d'autosave, pour survivre à un « effacer la session »
+    // et ne pas alourdir la sérialisation des timings. L'attribut
+    // data-quran-font posé sur <html> pilote la variable CSS --font-quran.
+    const QURAN_FONT_KEY = 'versets-split:quran-font';
+    const QURAN_FONT_FAMILY = { hafs: '"Uthmanic Hafs"', khatt: '"DigitalKhatt"' };
+
+    function applyQuranFont(choice) {
+        const value = QURAN_FONT_FAMILY[choice] ? choice : 'hafs';
+        document.documentElement.dataset.quranFont = value;
+        quranFontSelect.value = value;
+        // renderWordCarousel centre le mot actif à partir de sa largeur
+        // mesurée : avant que la police ne soit chargée, cette largeur est
+        // celle du fallback, le mot finit légèrement décentré jusqu'à la
+        // navigation suivante. On recentre une fois la police prête (si elle
+        // l'est déjà, la promesse résout tout de suite).
+        if (document.fonts && document.fonts.load) {
+            document.fonts
+                .load(`1rem ${QURAN_FONT_FAMILY[value]}`)
+                .then(() => { if (wordSession.isOpen()) renderWordMode(); })
+                .catch(() => {});
+        }
+    }
+
+    try {
+        applyQuranFont(localStorage.getItem(QURAN_FONT_KEY) || 'hafs');
+    } catch (e) {
+        applyQuranFont('hafs');
+    }
+
+    quranFontSelect.addEventListener('change', function() {
+        const choice = quranFontSelect.value;
+        applyQuranFont(choice);
+        try {
+            localStorage.setItem(QURAN_FONT_KEY, choice);
+        } catch (e) {
+            /* stockage indisponible : le choix reste appliqué pour la session */
+        }
+    });
 
     // Liste des mots (arabe) du verset `verseId` pour la sourate en cours,
     // ou undefined si les données ne sont pas disponibles pour ce verset.
