@@ -53,7 +53,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
     const seekNextVerseWordsBtn = document.getElementById('seekNextVerseWordsBtn');
-    const addVerseOccurrenceBtn = document.getElementById('addVerseOccurrenceBtn');
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
     const extraOccurrencesList = document.getElementById('extraOccurrencesList');
     const toggleExtraOccurrenceBtn = document.getElementById('toggleExtraOccurrenceBtn');
@@ -1024,14 +1023,6 @@ document.addEventListener('DOMContentLoaded', function() {
         wordProgress.textContent = snap.wordProgressText;
         renderWordCarousel(snap.words, snap.viewIndex);
 
-        // Marquer une nouvelle occurrence de CE verset (pas d'un mot) sans
-        // quitter le mode mots — contourne délibérément verseMarkingLocked
-        // (voir addOrCloseVerseOccurrence dans word-marking-session.js).
-        addVerseOccurrenceBtn.textContent = snap.addOccurrenceLabel;
-        addVerseOccurrenceBtn.title = snap.addOccurrenceLabel.startsWith('Terminer')
-            ? 'Marque la fin de cette nouvelle occurrence à la position audio actuelle'
-            : 'Le verset répète plus loin dans l\'audio : marque cette nouvelle occurrence sans quitter le mode mots';
-
         if (snap.isPendingSlot) {
             markWordBtn.style.display = '';
             correctWordBtn.style.display = 'none';
@@ -1284,27 +1275,6 @@ document.addEventListener('DOMContentLoaded', function() {
         renderWordMode();
         updateVerseList();
         showNotification(`Mot ${result.wordIndex + 1} terminé à ${time.toFixed(2)}s`);
-    });
-
-    // Marque une nouvelle occurrence du VERSET en cours (pas d'un mot) —
-    // le cheikh répète le verset entier plus loin dans le même passage.
-    addVerseOccurrenceBtn.addEventListener('click', function() {
-        if (!wordSession.isOpen() || !timeSource.isReady()) return;
-        const time = timeSource.now();
-        const result = wordSession.addOrCloseVerseOccurrence(time);
-        if (!result.ok) {
-            if (result.reason === 'end-before-start') {
-                showNotification('La fin doit être après le début de cette occurrence');
-            }
-            return;
-        }
-        showNotification(
-            result.action === 'closed'
-                ? `Occurrence du verset ${result.verseId} terminée à ${time.toFixed(2)}s`
-                : `Nouvelle occurrence du verset ${result.verseId} démarrée à ${time.toFixed(2)}s`,
-        );
-        renderWordMode();
-        updateVerseList();
     });
 
     // Ferme l'occurrence ouverte sur le mot courant ET en ouvre une sur le
