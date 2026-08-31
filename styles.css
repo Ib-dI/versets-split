@@ -592,6 +592,50 @@ button:disabled:hover {
   border-left: 3px solid var(--success-color);
 }
 
+/* Sélection de versets pour la copie en lot */
+.verse-select-checkbox {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 12px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+/* Le texte du verset prend la place libre pour que la case reste collée à
+   gauche (sinon justify-content: space-between l'éloignerait). */
+.verse-entry > span {
+  flex: 1;
+}
+
+.verse-entry.selected {
+  border-left: 3px solid var(--primary-color);
+  background: rgba(67, 97, 238, 0.08);
+}
+
+.dark-mode .verse-entry.selected {
+  background: rgba(76, 201, 240, 0.12);
+}
+
+/* Une sélection incomplète ET déjà mots-complets : la barre bleue prime. */
+.verse-entry.words-complete.selected {
+  border-left-color: var(--primary-color);
+}
+
+.clear-selection-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+}
+
+.clear-selection-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-color);
+  transform: none;
+  box-shadow: none;
+}
+
 .verse-entry span {
   font-family: var(--font-mono);
   font-size: 14px;

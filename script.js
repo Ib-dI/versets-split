@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const endVerseBtn = document.getElementById('endVerse');
     const normalizeBtn = document.getElementById('normalizeBtn');
     const copyAllBtn = document.getElementById('copyAll');
+    const copySelectionBtn = document.getElementById('copySelection');
+    const clearSelectionBtn = document.getElementById('clearSelection');
     const verseList = document.getElementById('verseList');
     const audioFileInput = document.getElementById('audioFile');
     const clearAudioBtn = document.getElementById('clearAudio');
@@ -193,6 +195,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // rechargé après une restauration.
     let lastFile = null;
     let restoredAudioMeta = null;
+
+    // Sélection de versets à copier en lot : un sous-ensemble coché à la
+    // main dans la liste (cas d'usage : on a recorrigé 2-3 versets et on
+    // veut recoller uniquement ces lignes-là dans le fichier maître, pas
+    // tout re-copier). Stockée par RÉFÉRENCE d'objet verset — comme
+    // wordSession et reorder — donc un réordonnancement ou une édition de
+    // borne (qui relancent updateVerseList) ne la perd pas ; un verset
+    // supprimé en sort de lui-même (réconciliation en tête de
+    // updateVerseList). Volontairement pas persistée dans l'autosave :
+    // la boucle corriger-puis-copier tient dans une seule session.
+    // Déclarée ici, avant restoreSession() → updateVerseList().
+    const selectedVerses = new Set();
+    // Dernier verset dont la case a été (dé)cochée — ancre du shift-clic
+    // qui applique le même nouvel état à toute la plage intermédiaire.
+    let lastToggledVerse = null;
 
     function saveSession() {
         try {
@@ -589,6 +606,28 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(() => showNotification('Versets copiés'))
             .catch(err => console.error('Erreur de copie:', err));
     });
+
+    // Copier uniquement les versets cochés — même format exact que
+    // « Copier tout » (serializeVerse + virgule finale, un par ligne),
+    // filtré et gardé dans l'ordre de la liste. La sélection n'est pas
+    // vidée après coup : on peut recoller, repérer une autre coquille,
+    // recorriger puis recopier sans tout recocher.
+    copySelectionBtn.addEventListener('click', function() {
+        const picked = verses.filter((verse) => selectedVerses.has(verse));
+        if (picked.length === 0) return;
+        const text = picked.map((verse) => `${verseTimeline.serializeVerse(verse)},`).join('\n');
+        navigator.clipboard.writeText(text)
+            .then(() => showNotification(
+                `${picked.length} verset${picked.length > 1 ? 's' : ''} copié${picked.length > 1 ? 's' : ''}`,
+            ))
+            .catch(err => console.error('Erreur de copie:', err));
+    });
+
+    clearSelectionBtn.addEventListener('click', function() {
+        selectedVerses.clear();
+        lastToggledVerse = null;
+        updateVerseList();
+    });
     
     // Exporter les versets
     exportBtn.addEventListener('click', function() {
@@ -691,8 +730,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return span;
     }
 
+    // Réconcilie la sélection de copie avec le tableau courant (un verset
+    // supprimé en sort) et remet à jour les deux boutons associés. Appelé
+    // en tête de chaque rendu — seul point de passage après toute mutation.
+    function syncSelectionControls() {
+        for (const verse of selectedVerses) {
+            if (!verses.includes(verse)) selectedVerses.delete(verse);
+        }
+        if (lastToggledVerse && !verses.includes(lastToggledVerse)) lastToggledVerse = null;
+        const count = selectedVerses.size;
+        copySelectionBtn.textContent = `Copier la sélection (${count})`;
+        copySelectionBtn.disabled = count === 0;
+        clearSelectionBtn.hidden = count === 0;
+    }
+
     function updateVerseList() {
         saveSession();
+        syncSelectionControls();
         verseList.innerHTML = '';
 
         if (verses.length === 0) {
@@ -709,7 +763,38 @@ document.addEventListener('DOMContentLoaded', function() {
             const wordList = getWordList(verse.id);
             const wordsComplete = Boolean(wordList) && verse.words.length === wordList.length;
             if (wordsComplete) completeCount++;
-            verseEntry.className = wordsComplete ? 'verse-entry words-complete' : 'verse-entry';
+            verseEntry.className = 'verse-entry'
+                + (wordsComplete ? ' words-complete' : '')
+                + (selectedVerses.has(verse) ? ' selected' : '');
+
+            // Case de sélection pour la copie en lot. stopPropagation sur le
+            // clic pour ne pas amorcer le drag de réordonnancement ; le
+            // shift-clic (dé)coche toute la plage depuis la dernière case
+            // touchée, en lui appliquant le même nouvel état.
+            const selectCheckbox = document.createElement('input');
+            selectCheckbox.type = 'checkbox';
+            selectCheckbox.className = 'verse-select-checkbox';
+            selectCheckbox.checked = selectedVerses.has(verse);
+            selectCheckbox.title = 'Cocher pour copier ce verset en lot (Maj+clic : plage)';
+            selectCheckbox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const nowChecked = selectCheckbox.checked;
+                const anchorIndex = lastToggledVerse ? verses.indexOf(lastToggledVerse) : -1;
+                if (e.shiftKey && anchorIndex !== -1 && anchorIndex !== index) {
+                    const lo = Math.min(anchorIndex, index);
+                    const hi = Math.max(anchorIndex, index);
+                    for (let i = lo; i <= hi; i++) {
+                        if (nowChecked) selectedVerses.add(verses[i]);
+                        else selectedVerses.delete(verses[i]);
+                    }
+                } else if (nowChecked) {
+                    selectedVerses.add(verse);
+                } else {
+                    selectedVerses.delete(verse);
+                }
+                lastToggledVerse = verse;
+                updateVerseList();
+            });
 
             const verseText = document.createElement('span');
             const wordsProgress = wordList ? ` — mots ${verse.words.length}/${wordList.length}` : '';
@@ -804,6 +889,7 @@ document.addEventListener('DOMContentLoaded', function() {
             actionsDiv.appendChild(copyBtn);
             actionsDiv.appendChild(resetBtn);
 
+            verseEntry.appendChild(selectCheckbox);
             verseEntry.appendChild(verseText);
             verseEntry.appendChild(actionsDiv);
 
@@ -822,7 +908,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (canReorderVerse) {
                 verseEntry.draggable = true;
                 verseEntry.title = 'Glisser pour réordonner';
-                verseEntry.addEventListener('dragstart', () => {
+                verseEntry.addEventListener('dragstart', (e) => {
+                    // Un drag amorcé depuis la case à cocher ne doit pas
+                    // déclencher un réordonnancement.
+                    if (e.target === selectCheckbox) {
+                        e.preventDefault();
+                        return;
+                    }
                     dragSrcVerse = verse;
                     verseEntry.classList.add('dragging');
                 });
