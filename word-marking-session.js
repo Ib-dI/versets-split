@@ -163,6 +163,25 @@ export class WordMarkingSession {
         return this.open(nextIndex, { force });
     }
 
+    // Symétrique de advanceToNextWordableVerse : passe directement au mode
+    // mots du verset marquable précédent celui en cours.
+    advanceToPrevWordableVerse({ force = false } = {}) {
+        if (!this.isOpen()) return { ok: false, reason: 'not-open' };
+
+        const fromIndex = this.getCurrentIndex();
+        let prevIndex = -1;
+        for (let i = fromIndex - 1; i >= 0; i--) {
+            const v = this.#collaborator.getVerse(i);
+            if (this.#wordListProvider(v.id) && v.end !== null) {
+                prevIndex = i;
+                break;
+            }
+        }
+        if (prevIndex === -1) return { ok: false, reason: 'no-prev-verse' };
+
+        return this.open(prevIndex, { force });
+    }
+
     setViewIndex(index) {
         if (!this.isOpen()) return;
         this.#wordViewIndex = index;

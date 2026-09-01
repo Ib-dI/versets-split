@@ -35,6 +35,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const exportBtn = document.getElementById('exportBtn');
     const exportText = document.getElementById('exportText');
     const notification = document.getElementById('notification');
+    const infoToggleBtn = document.getElementById('infoToggleBtn');
+    const shortcutsOverlay = document.getElementById('shortcutsOverlay');
+    const shortcutsCloseBtn = document.getElementById('shortcutsCloseBtn');
     const verseIdInput = document.getElementById('verseId');
     const timeControlBtns = document.querySelectorAll('.time-control-btn');
     const playPauseBtn = document.getElementById('playPauseBtn');
@@ -53,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const terminateWordBtn = document.getElementById('terminateWordBtn');
     const undoWordBtn = document.getElementById('undoWordBtn');
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
+    const prevVerseWordsBtn = document.getElementById('prevVerseWordsBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
     const seekNextVerseWordsBtn = document.getElementById('seekNextVerseWordsBtn');
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
@@ -427,6 +431,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     playPauseBtn.addEventListener('click', togglePlayPause);
 
+    // Modale des raccourcis clavier : purement informative, sans état côté
+    // session — un show/hide sur l'overlay suffit. Le clic hors de la carte
+    // (sur l'overlay lui-même, pas ses enfants) et Échap la ferment, voir le
+    // handler keydown plus bas.
+    function openShortcutsModal() {
+        shortcutsOverlay.style.display = 'flex';
+        shortcutsCloseBtn.focus();
+    }
+
+    function closeShortcutsModal() {
+        shortcutsOverlay.style.display = 'none';
+        infoToggleBtn.focus();
+    }
+
+    infoToggleBtn.addEventListener('click', openShortcutsModal);
+    shortcutsCloseBtn.addEventListener('click', closeShortcutsModal);
+    shortcutsOverlay.addEventListener('click', function(e) {
+        if (e.target === shortcutsOverlay) closeShortcutsModal();
+    });
+
     // Raccourcis clavier : espace = lecture/pause, c/v/b = reculer de
     // 5/2/1s, n/,/; = avancer de 1/2/5s. Ignorés si le focus est dans un
     // champ de saisie (numéro de sourate/verset, zone d'export) pour ne
@@ -434,6 +458,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const KEY_SEEK_SECONDS = { c: -5, v: -2, b: -1, n: 1, ',': 2, ';': 5 };
 
     document.addEventListener('keydown', function(e) {
+        // Modale des raccourcis ouverte : seul Échap agit (la ferme), tout
+        // le reste est avalé pour éviter qu'un raccourci de fond (espace,
+        // f, g...) ne s'applique pendant qu'on la consulte.
+        if (shortcutsOverlay.style.display !== 'none') {
+            if (e.key === 'Escape') closeShortcutsModal();
+            return;
+        }
+
         const tag = document.activeElement?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
         if (!timeSource.isReady()) return;
@@ -446,16 +478,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Mode mots ouvert : « f » marque le mot en cours (au clavier plutôt
         // qu'à la souris, pour caler l'instant exact pendant l'écoute sans
-        // lâcher les touches), « s » annule le dernier mot marqué, « g »
-        // passe au verset suivant marquable (même effet que
-        // nextVerseWordsBtn, avec sa garde withLeaveConfirm). On ne
-        // déclenche markWordBtn que si isPendingSlot est vrai (même
-        // condition que renderWordMode() pour l'afficher) — sinon, en train
-        // de relire/corriger un mot déjà marqué (viewIndex ailleurs),
+        // lâcher les touches), « s » annule le dernier mot marqué, « g »/
+        // « Maj+G » passent au verset suivant/précédent marquable (même
+        // effet que nextVerseWordsBtn/prevVerseWordsBtn, avec leur garde
+        // withLeaveConfirm), « h »/« j » reculent/avancent d'un mot (même
+        // effet que prevWordBtn/nextWordBtn — un simple .click() suffit, ces
+        // boutons sont déjà .disabled aux bornes via canGoPrev/canGoNext
+        // dans renderWordMode(), donc le clic ne fait rien s'il n'y a rien à
+        // faire), « r » bascule une occurrence supplémentaire du mot en
+        // cours (toggleExtraOccurrenceBtn), « t » enchaîne une occurrence
+        // ouverte sur le mot suivant (advanceOccurrenceBtn). On ne déclenche
+        // markWordBtn que si isPendingSlot est vrai (même condition que
+        // renderWordMode() pour l'afficher) — sinon, en train de
+        // relire/corriger un mot déjà marqué (viewIndex ailleurs),
         // markWordBtn est masqué mais reste cliquable par script : sans ce
         // garde-fou, « f » avancerait quand même sur le mot suivant sans
-        // rapport avec ce qui est affiché à l'écran.
+        // rapport avec ce qui est affiché à l'écran. Même souci pour « r »/
+        // « t » : toggleExtraOccurrenceBtn/advanceOccurrenceBtn ne sont
+        // rafraîchis que par renderExtraOccurrences(), elle-même appelée
+        // uniquement quand la section occurrences est affichée — on
+        // retrouve donc cette même condition via snap.extra (non nul
+        // seulement dans ce cas) plutôt que de se fier à un .disabled/
+        // display potentiellement obsolète.
         if (wordSession.isOpen()) {
+            // Testé avant le .toLowerCase() ci-dessous : « G » (Maj+g) doit
+            // rester distinct de « g » seul.
+            if (e.key === 'G') {
+                e.preventDefault();
+                prevVerseWordsBtn.click();
+                return;
+            }
             const key = e.key.toLowerCase();
             if (key === 'f') {
                 e.preventDefault();
@@ -470,6 +522,26 @@ document.addEventListener('DOMContentLoaded', function() {
             if (key === 'g') {
                 e.preventDefault();
                 nextVerseWordsBtn.click();
+                return;
+            }
+            if (key === 'h') {
+                e.preventDefault();
+                prevWordBtn.click();
+                return;
+            }
+            if (key === 'j') {
+                e.preventDefault();
+                nextWordBtn.click();
+                return;
+            }
+            if (key === 'r') {
+                e.preventDefault();
+                if (wordSession.describe().extra !== null) toggleExtraOccurrenceBtn.click();
+                return;
+            }
+            if (key === 't') {
+                e.preventDefault();
+                if (wordSession.describe().extra?.canAdvance) advanceOccurrenceBtn.click();
                 return;
             }
         }
@@ -1474,6 +1546,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (applyOpenResult(result)) return;
         if (result.reason === 'no-next-verse') {
             showNotification('Aucun verset suivant marquable après celui-ci');
+        }
+    });
+
+    prevVerseWordsBtn.addEventListener('click', function() {
+        const result = withLeaveConfirm((opts) => wordSession.advanceToPrevWordableVerse(opts));
+        if (applyOpenResult(result)) return;
+        if (result.reason === 'no-prev-verse') {
+            showNotification('Aucun verset précédent marquable avant celui-ci');
         }
     });
 

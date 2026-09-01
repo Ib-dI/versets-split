@@ -361,6 +361,28 @@ test('advanceToNextWordableVerse signale l\'absence de verset suivant marquable'
     assert.equal(r.reason, 'no-next-verse');
 });
 
+test('advanceToPrevWordableVerse saute les versets sans données de mots ou pas bornés', () => {
+    const verses = [
+        { id: 1, start: 0, end: 10, words: [] },
+        { id: 1, start: 10, end: null, words: [] }, // pas borné
+        { id: 99, start: 20, end: 30, words: [] }, // pas de wordList
+        { id: 1, start: 30, end: 40, words: [] },
+    ];
+    const session = makeSession(verses);
+    session.open(3);
+
+    const r = session.advanceToPrevWordableVerse();
+    assert.equal(r.ok, true);
+    assert.equal(session.getCurrentIndex(), 0);
+});
+
+test('advanceToPrevWordableVerse signale l\'absence de verset précédent marquable', () => {
+    const { session } = openVerse();
+    const r = session.advanceToPrevWordableVerse();
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'no-prev-verse');
+});
+
 test('describe() reflète les boutons/labels attendus pendant un enchaînement d\'occurrences', () => {
     const { session } = openVerse();
     session.markWord(1);

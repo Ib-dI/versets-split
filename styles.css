@@ -405,11 +405,175 @@ audio {
   flex-wrap: wrap;
 }
 
-.theme-toggle-btn {
+.header-actions {
   position: absolute;
   right: 25px;
   top: 25px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-toggle-btn,
+.info-toggle-btn {
   background: var(--verse-id-bg);
+}
+
+.info-toggle-btn {
+  color: var(--text-secondary);
+  box-shadow: 0 2px 12px var(--shadow-color);
+}
+
+.info-toggle-btn:hover {
+  color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+/* Modale des raccourcis clavier — voile plein écran + carte centrée,
+   fermée par Échap/clic-hors-modale (voir infoToggleBtn dans script.js). */
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--padding-lg);
+  z-index: 2000;
+}
+
+.shortcuts-modal {
+  background: var(--background-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  border: 0.5px solid var(--border-color);
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.shortcuts-modal-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--padding-lg);
+  background: var(--background-color);
+  border-bottom: 0.5px solid var(--border-color);
+}
+
+.shortcuts-modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.shortcuts-close-btn {
+  padding: 6px;
+  min-width: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
+.shortcuts-close-btn:hover {
+  color: var(--text-color);
+  background: var(--card-bg-color);
+  transform: none;
+}
+
+.shortcuts-modal-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--padding-xl);
+  padding: var(--padding-lg);
+}
+
+.shortcuts-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: var(--padding-sm);
+}
+
+.shortcuts-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcuts-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--padding-md);
+}
+
+.shortcut-label {
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.key-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.key-plus {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* Touches façon capuchon clavier Mac : caisson clair légèrement bombé
+   (surface + tranche basse plus foncée), typographie compacte. */
+.key-cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+  background: linear-gradient(180deg, #fdfdfd, #e3e4e6);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-bottom-width: 2px;
+  border-bottom-color: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 1px 1px rgba(0, 0, 0, 0.08);
+}
+
+.key-cap-wide {
+  min-width: 64px;
+  padding: 0 10px;
+}
+
+.dark-mode .key-cap {
+  background: linear-gradient(180deg, #3d3d3f, #29292b);
+  border-color: rgba(255, 255, 255, 0.18);
+  border-bottom-color: rgba(0, 0, 0, 0.5);
+  color: var(--text-color);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 640px) {
+  .shortcuts-modal-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 .verse-id-input {
