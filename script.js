@@ -487,7 +487,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // dans renderWordMode(), donc le clic ne fait rien s'il n'y a rien à
         // faire), « r » bascule une occurrence supplémentaire du mot en
         // cours (toggleExtraOccurrenceBtn), « t » enchaîne une occurrence
-        // ouverte sur le mot suivant (advanceOccurrenceBtn). On ne déclenche
+        // ouverte sur le mot suivant (advanceOccurrenceBtn), « d » ferme la
+        // principale encore ouverte du mot affiché (terminateWordBtn — même
+        // condition d'affichage : !isPendingSlot && primary.open). On ne déclenche
         // markWordBtn que si isPendingSlot est vrai (même condition que
         // renderWordMode() pour l'afficher) — sinon, en train de
         // relire/corriger un mot déjà marqué (viewIndex ailleurs),
@@ -542,6 +544,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (key === 't') {
                 e.preventDefault();
                 if (wordSession.describe().extra?.canAdvance) advanceOccurrenceBtn.click();
+                return;
+            }
+            if (key === 'd') {
+                e.preventDefault();
+                const d = wordSession.describe();
+                if (!d.isPendingSlot && d.primary?.open) terminateWordBtn.click();
                 return;
             }
         }
