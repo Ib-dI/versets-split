@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Régénère data/existing-timings.js depuis src/lib/data/audios.ts (tafsir-app,
 // dépôt frère) — évite la copie manuelle qui a produit le snapshot actuel.
-// Timings de versets uniquement (comme avant) : le mode mots de cet outil
-// part toujours de zéro pour un verset donné, les mots déjà posés dans
-// audios.ts n'ont rien à faire ici.
+// Inclut les mots déjà marqués (words, au format startTime/endTime brut de
+// audios.ts) quand ils existent : "Charger" les reprend tels quels plutôt
+// que de repartir de zéro, pour pouvoir revoir/corriger un mot précis
+// (ex. ceux signalés par la bande orange) sans tout re-marquer.
 //
 // Usage:
 //   node sync-existing-timings.mjs                     # ../tafsir-app par défaut
@@ -46,7 +47,8 @@ function main() {
             lines.push(`      title: ${JSON.stringify(part.title)},`);
             lines.push("      timings: [");
             for (const timing of part.timings || []) {
-                lines.push(`        { id: ${timing.id}, startTime: ${timing.startTime}, endTime: ${timing.endTime} },`);
+                const wordsField = timing.words ? `, words: ${JSON.stringify(timing.words)}` : "";
+                lines.push(`        { id: ${timing.id}, startTime: ${timing.startTime}, endTime: ${timing.endTime}${wordsField} },`);
             }
             lines.push("      ],");
             lines.push("    },");

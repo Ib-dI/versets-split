@@ -28,6 +28,19 @@ du suivant, jamais pile le même instant) et, optionnellement, des
 (ou une phrase de plusieurs mots à la suite) plus tard dans le même
 passage, indépendamment du séquençage de l'occurrence principale.
 
+## hasOverlappingWords
+
+Fonction de `script.js` (pas dans WordMarkingSession/VerseTimeline — pur
+calcul de présentation, appelé à chaque rendu de la liste) : vrai si deux
+occurrences d'un même mot d'un verset se chevauchent (l'une contient
+l'autre), presque toujours le signe d'une occurrence mal refermée plutôt
+qu'un cas légitime. Bascule la bande de gauche du verset au orange
+(`--warning-color`) au lieu du vert dans `updateVerseList` — purement
+indicatif, aucune correction automatique. Même calcul que le détecteur
+équivalent côté tafsir-app (`tools/normalize-timing-gaps.mjs`, lecture
+seule lui aussi), qui liste tous les cas connus dans son
+`docs/timing-overlaps.md`.
+
 ## GAP
 
 Constante (`0.01`, en secondes) définie dans `verse-timeline.js` et
@@ -119,11 +132,18 @@ direct.
 
 ## data/existing-timings.js
 
-Snapshot des timings de versets déjà posés dans `audios.ts` (tafsir-app),
-verset uniquement — les mots sont volontairement absents (le mode mots
-part toujours de zéro pour un verset donné, quel que soit ce qui existe
-déjà). Régénéré par `sync-existing-timings.mjs` (`node
-sync-existing-timings.mjs [chemin-vers-tafsir-app]`, défaut :
-`../tafsir-app`) plutôt que copié à la main comme avant — à relancer après
-chaque session de marquage collée dans `audios.ts` pour que la liste des
-versets déjà posés reste à jour.
+Snapshot des timings déjà posés dans `audios.ts` (tafsir-app), versets ET
+mots (`words`, au format `startTime`/`endTime` brut de audios.ts). Régénéré
+par `sync-existing-timings.mjs` (`node sync-existing-timings.mjs
+[chemin-vers-tafsir-app]`, défaut : `../tafsir-app`) plutôt que copié à la
+main comme avant — à relancer après chaque session de marquage collée dans
+`audios.ts` pour que la liste reste à jour.
+
+"Charger" (renderExistingTimingsList dans script.js) reprend les mots tels
+quels plutôt que de repartir de zéro — traduit `startTime`/`endTime` en
+`start`/`end` (format interne) au passage. Permet de revoir/corriger un mot
+précis d'un verset déjà entièrement marqué (ex. ceux que
+[[hasOverlappingWords]] signale par la bande orange) sans tout re-marquer :
+WordMarkingSession.open() gère déjà nativement un verset dont les mots sont
+partiellement ou totalement posés (`wordViewIndex` démarre après le dernier
+mot marqué), aucun changement nécessaire côté session.

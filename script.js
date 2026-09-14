@@ -289,13 +289,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const loadBtn = document.createElement('button');
             loadBtn.className = 'copy-btn load-timings-btn';
             loadBtn.textContent = 'Charger';
-            loadBtn.title = 'Remplace les versets actuellement marqués par ces timings existants';
+            loadBtn.title = 'Remplace les versets actuellement marqués par ces timings existants (mots déjà posés inclus)';
             loadBtn.addEventListener('click', () => {
                 verseTimeline.replaceAll(part.timings.map((t) => ({
                     id: t.id,
                     start: t.startTime,
                     end: t.endTime,
-                    words: [],
+                    // Mots deja marques (si presents) : repris tels quels au
+                    // lieu d'etre vides, pour pouvoir revoir/corriger un mot
+                    // precis (ex. bande orange) sans tout re-marquer depuis
+                    // zero. Traduit startTime/endTime (format audios.ts) en
+                    // start/end (format interne de cet outil).
+                    words: (t.words || []).map((occurrences) =>
+                        occurrences.map((o) => ({ start: o.startTime, end: o.endTime })),
+                    ),
                 })));
                 const lastId = verses.length > 0 ? verses[verses.length - 1].id : 0;
                 verseIdInput.value = lastId + 1;
