@@ -825,6 +825,27 @@ document.addEventListener('DOMContentLoaded', function() {
         clearSelectionBtn.hidden = count === 0;
     }
 
+    // Vrai si deux occurrences d'un meme mot du verset se chevauchent
+    // (l'une contient l'autre) — presque toujours une occurrence mal
+    // refermee (ex : la principale jamais close au bon moment, voir le bug
+    // corrige sur markWord). Purement indicatif ici (bande orange plutot
+    // que verte dans la liste) ; la correction reste manuelle, mot par mot.
+    function hasOverlappingWords(verse) {
+        if (!verse.words) return false;
+        for (const occurrences of verse.words) {
+            for (let i = 0; i < occurrences.length; i++) {
+                const a = occurrences[i];
+                if (a.end === null) continue;
+                for (let j = i + 1; j < occurrences.length; j++) {
+                    const b = occurrences[j];
+                    if (b.end === null) continue;
+                    if (a.start < b.end && b.start < a.end) return true;
+                }
+            }
+        }
+        return false;
+    }
+
     function updateVerseList() {
         saveSession();
         syncSelectionControls();
@@ -843,10 +864,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const verseEntry = document.createElement('div');
             const wordList = getWordList(verse.id);
             const wordsComplete = Boolean(wordList) && verse.words.length === wordList.length;
+            const wordsOverlap = hasOverlappingWords(verse);
             if (wordsComplete) completeCount++;
             verseEntry.className = 'verse-entry'
                 + (wordsComplete ? ' words-complete' : '')
+                + (wordsOverlap ? ' words-overlap' : '')
                 + (selectedVerses.has(verse) ? ' selected' : '');
+            if (wordsComplete && wordsOverlap) {
+                verseEntry.title = 'Deux occurrences du même mot se chevauchent — à vérifier';
+            }
 
             // Case de sélection pour la copie en lot. stopPropagation sur le
             // clic pour ne pas amorcer le drag de réordonnancement ; le

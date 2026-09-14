@@ -31,6 +31,7 @@
   --black: #000000;
   --success-color: #34c759;
   --success-hover: #2ea84f;
+  --warning-color: #ff9500;
   --danger-color: #ff3b30;
   --danger-hover: #e6352b;
   --border-color: rgba(0, 0, 0, 0.1);
@@ -756,6 +757,13 @@ button:disabled:hover {
   border-left: 3px solid var(--success-color);
 }
 
+/* Deux occurrences du meme mot se chevauchent (l'une contient l'autre) —
+   presque toujours une occurrence mal refermee. Prime sur le vert : mieux
+   vaut repartir un mot "complet" mais faux qu'un vrai manquant. */
+.verse-entry.words-overlap {
+  border-left-color: var(--warning-color);
+}
+
 /* Sélection de versets pour la copie en lot */
 .verse-select-checkbox {
   flex: none;
@@ -781,8 +789,10 @@ button:disabled:hover {
   background: rgba(76, 201, 240, 0.12);
 }
 
-/* Une sélection incomplète ET déjà mots-complets : la barre bleue prime. */
-.verse-entry.words-complete.selected {
+/* Une sélection incomplète ET déjà mots-complets (ou en chevauchement) :
+   la barre bleue prime. */
+.verse-entry.words-complete.selected,
+.verse-entry.words-overlap.selected {
   border-left-color: var(--primary-color);
 }
 
