@@ -15,6 +15,14 @@
 // chaque champ de chaque verset de toute façon, la profondeur de ce module
 // porte sur les MUTATIONS, pas sur le fait de cacher le tableau au rendu.
 
+// Écart volontaire entre la fin d'un verset et le début du suivant — sans
+// lui, endTime[i] === startTime[i+1] exactement, et le highlighter de
+// tafsir-app (intervalle fermé des deux côtés : time >= start && time <=
+// end) matche les deux à cet instant précis, ce qui peut faire scintiller
+// le surlignage à la frontière. Même valeur que tools/normalize-timing-
+// gaps.mjs côté tafsir-app.
+const GAP = 0.01;
+
 export class VerseTimeline {
     #verses = [];
 
@@ -146,19 +154,22 @@ export class VerseTimeline {
     }
 
     // Calcule (sans muter) les corrections que "Normaliser" appliquerait :
-    // pour chaque paire consécutive, la fin doit rejoindre le début du
-    // verset suivant — trou ou chevauchement, même règle. Ignore les
-    // écarts sous la tolérance (bruit flottant, invisible à 2 décimales)
-    // pour ne pas vider inutilement des mots déjà marqués. Séparé de
+    // pour chaque paire consécutive, la fin doit s'arrêter GAP avant le
+    // début du verset suivant (trou ou chevauchement, même règle) — le
+    // début du suivant ne bouge jamais, c'est lui l'instant de référence.
+    // Tolerance : ignore les écarts déjà proches de la cible (bruit
+    // flottant, invisible à 2 décimales) pour ne pas vider inutilement des
+    // mots déjà marqués — nettement plus petite que GAP pour ne pas
+    // confondre "déjà normalisé" avec "encore accolé à zéro". Séparé de
     // l'application pour permettre une confirmation avant mutation quand
     // des mots seraient perdus.
-    previewNormalization(tolerance = 0.01) {
+    previewNormalization(tolerance = 0.001) {
         const changes = [];
         for (let i = 0; i < this.#verses.length - 1; i++) {
             const verse = this.#verses[i];
-            const nextStart = this.#verses[i + 1].start;
-            if (Math.abs(verse.end - nextStart) > tolerance) {
-                changes.push({ index: i, from: verse.end, to: nextStart, hadWords: verse.words.length > 0 });
+            const target = this.#verses[i + 1].start - GAP;
+            if (Math.abs(verse.end - target) > tolerance) {
+                changes.push({ index: i, from: verse.end, to: target, hadWords: verse.words.length > 0 });
             }
         }
         return changes;

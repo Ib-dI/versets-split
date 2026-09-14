@@ -56,7 +56,7 @@ test('markWord enchaîne les mots sans blanc et cale le dernier sur verse.end', 
     assert.deepEqual(verses[0].words[0][0], { start: 1.0, end: null });
 
     r = session.markWord(2.0);
-    assert.equal(verses[0].words[0][0].end, 2.0); // mot précédent refermé
+    assert.equal(verses[0].words[0][0].end, 1.99); // mot précédent refermé (GAP avant 2.0)
     assert.equal(verses[0].words[1][0].start, 2.0);
 
     r = session.markWord(3.0);
@@ -91,7 +91,7 @@ test('correctWord recale le début et déplace la fin du mot précédent', () =>
     const r = session.correctWord(2.5);
     assert.equal(r.ok, true);
     assert.equal(verses[0].words[1][0].start, 2.5);
-    assert.equal(verses[0].words[0][0].end, 2.5);
+    assert.equal(verses[0].words[0][0].end, 2.49);
 });
 
 test('terminateWord ferme la principale ouverte du mot affiché', () => {
@@ -112,7 +112,7 @@ test('setWordTime(start) déplace la fin du mot précédent (édition depuis la 
     const r = session.setWordTime(1, 'start', 2.5);
     assert.equal(r.ok, true);
     assert.equal(verses[0].words[1][0].start, 2.5);
-    assert.equal(verses[0].words[0][0].end, 2.5);
+    assert.equal(verses[0].words[0][0].end, 2.49);
 });
 
 test('setWordTime(start) sur le premier mot ne touche à rien d\'autre (pas de mot précédent)', () => {
@@ -133,7 +133,7 @@ test('setWordTime(end) déplace le début du mot suivant', () => {
     const r = session.setWordTime(0, 'end', 1.5);
     assert.equal(r.ok, true);
     assert.equal(verses[0].words[0][0].end, 1.5);
-    assert.equal(verses[0].words[1][0].start, 1.5);
+    assert.equal(verses[0].words[1][0].start, 1.51);
 });
 
 test('setWordTime(end) sur le dernier mot se découple de verse.end', () => {
@@ -170,7 +170,7 @@ test('setExtraOccurrenceTime édite une occurrence par (wordIndex, extraIndex) s
     assert.equal(r.ok, true);
     assert.equal(verses[0].words[0][1].start, 12);
     assert.equal(verses[0].words[0][1].end, 10.5); // fin de cette occurrence inchangée
-    assert.equal(verses[0].words[0][0].end, 2); // principale du mot 0 inchangée (pas de chaînage)
+    assert.equal(verses[0].words[0][0].end, 1.99); // principale du mot 0 inchangée (pas de chaînage)
 });
 
 test('setExtraOccurrenceTime refuse une occurrence inexistante', () => {
@@ -244,7 +244,7 @@ test('advanceOccurrence enchaîne une occurrence sur le mot suivant', () => {
 
     const r = session.advanceOccurrence(11);
     assert.equal(r.ok, true);
-    assert.equal(verses[0].words[0][1].end, 11); // mot 0 refermé
+    assert.equal(verses[0].words[0][1].end, 10.99); // mot 0 refermé (GAP avant 11)
     assert.equal(verses[0].words[1][1].start, 11); // mot 1 ouvert
     assert.equal(session.describe().viewIndex, 1);
 });
@@ -431,4 +431,83 @@ test('reorderExtraOccurrence réordonne les occurrences supplémentaires fermée
     assert.equal(r.ok, true);
     assert.equal(verses[0].words[0][1].start, 20);
     assert.equal(verses[0].words[0][2].start, 10);
+});
+
+test('shrinkLastWordEndIfNeeded resserre la fin du dernier mot à GAP avant la nouvelle occurrence', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15); // dernier mot calé sur verse.end (30) par défaut
+
+    session.setViewIndex(0);
+    const r = session.toggleExtraOccurrence(20); // le cheikh reprend avant la fin par défaut du dernier mot
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.shrunk, { wordIndex: 2, shrunkTo: 19.99 });
+    assert.equal(verses[0].words[2][0].end, 19.99);
+});
+
+test('shrinkLastWordEndIfNeeded resserre aussi quand la nouvelle occurrence démarre PILE sur verse.end (égalité, pas seulement <)', () => {
+    const { session, verses } = openVerse(); // verse.end = 30
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15); // dernier mot calé sur verse.end (30) par défaut
+
+    session.setViewIndex(0);
+    const r = session.toggleExtraOccurrence(30); // démarre exactement sur l'approximation par défaut
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.shrunk, { wordIndex: 2, shrunkTo: 29.99 });
+    assert.equal(verses[0].words[2][0].end, 29.99);
+});
+
+test('toggleExtraOccurrence sur un autre mot ferme l\'occurrence précédente à GAP près', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15);
+
+    session.setViewIndex(0);
+    session.toggleExtraOccurrence(10); // ouvre sur le mot 0
+
+    session.setViewIndex(1);
+    const r = session.toggleExtraOccurrence(15); // ferme le mot 0 en cascade, ouvre sur le mot 1
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][1].end, 14.99); // GAP avant 15
+    assert.equal(verses[0].words[1][1].start, 15); // instant observé, inchangé
+});
+
+test('terminateWord suivi de toggleExtraOccurrence au même instant laisse un GAP', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1); // mot 0 ouvert (end: null), viewIndex avance sur l'emplacement suivant
+    session.setViewIndex(0); // revient voir le mot 0 pour le terminer
+
+    const t = session.terminateWord(5); // débloque l'ajout d'occurrence
+    assert.equal(t.ok, true);
+    assert.equal(verses[0].words[0][0].end, 5); // instant observé, tel quel pour l'instant
+
+    const r = session.toggleExtraOccurrence(5); // même instant, sans bouger la lecture
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][0].end, 4.99); // resserré de GAP rétroactivement
+    assert.equal(verses[0].words[0][1].start, 5); // l'occurrence garde l'instant observé
+});
+
+test('terminateWord suivi de toggleExtraOccurrence à un autre instant ne touche rien', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.setViewIndex(0);
+
+    session.terminateWord(5);
+    session.toggleExtraOccurrence(8); // lecture déplacée entre-temps
+
+    assert.equal(verses[0].words[0][0].end, 5); // pas de collision, pas de resserrement
+});
+
+test('markWord ne recalcule PAS la fin d\'un mot déjà fermé via terminateWord (bug corrigé : écrasement silencieux)', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.setViewIndex(0);
+    session.terminateWord(5); // fixe délibérément end=5, une vraie observation
+
+    session.markWord(15); // mot suivant marqué bien plus tard
+    assert.equal(verses[0].words[0][0].end, 5); // préservé, pas écrasé par 15 - GAP
+    assert.equal(verses[0].words[1][0].start, 15);
 });

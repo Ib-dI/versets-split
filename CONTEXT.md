@@ -21,12 +21,37 @@ identifie la position d'une occurrence parmi ses sœurs (ex. "occurrence
 
 ## Mot (word) / occurrence de mot
 
-Un mot marqué a une **occurrence principale** (`words[i][0]`, chaîne
-contiguë avec ses voisins — la fin de l'un est le début du suivant) et,
-optionnellement, des **occurrences supplémentaires** (`words[i][1+]`) : le
-cheikh redit ce mot (ou une phrase de plusieurs mots à la suite) plus tard
-dans le même passage, indépendamment du séquençage de l'occurrence
-principale.
+Un mot marqué a une **occurrence principale** (`words[i][0]`, chaîne avec
+ses voisins à [[GAP]] près — la fin de l'un précède de justesse le début
+du suivant, jamais pile le même instant) et, optionnellement, des
+**occurrences supplémentaires** (`words[i][1+]`) : le cheikh redit ce mot
+(ou une phrase de plusieurs mots à la suite) plus tard dans le même
+passage, indépendamment du séquençage de l'occurrence principale.
+
+## GAP
+
+Constante (`0.01`, en secondes) définie dans `verse-timeline.js` et
+`word-marking-session.js` : l'écart volontaire laissé entre la fin d'un
+verset/mot et le début du suivant, plutôt que de les accoler exactement
+(`endTime[i] === startTime[i+1]`). Sans lui, le highlighter de tafsir-app
+(intervalle fermé des deux côtés : `time >= start && time <= end`) matche
+les deux voisins à l'instant exact de la frontière, ce qui peut faire
+scintiller le surlignage pendant la lecture.
+
+Toujours appliqué du côté qui se referme (l'`end`) quand un `start` est
+l'instant directement observé (clic, `markWord`, `correctWord`,
+`setWordTime(..., 'start', ...)`, chaînage d'occurrence) ; appliqué en
+sens inverse (`+ GAP` sur le `start` voisin) quand c'est un `end` qui est
+directement édité (`setWordTime(..., 'end', ...)`) — le champ édité
+directement garde toujours l'instant observé tel quel, c'est le voisin
+déplacé en cascade qui reçoit le décalage. Même valeur et même principe
+que `tools/normalize-timing-gaps.mjs` côté tafsir-app, qui corrige après
+coup les timings déjà collés à zéro dans `audios.ts`.
+
+Née du retour terrain du 2026-09-14 : le scintillement du surlignage
+mot-par-mot persistait après la normalisation ponctuelle côté tafsir-app
+tant que cet outil continuait à produire de nouveaux timings à écart
+zéro — GAP le rend structurel plutôt que correctif.
 
 ## [[WordMarkingSession]]
 
@@ -91,3 +116,14 @@ consommateur actuel n'a besoin d'un faux adaptateur en test
 une cérémonie d'injection de dépendance pour un seul appelant.
 `.duration`/`.paused`/`.play()` restent hors périmètre, en accès DOM
 direct.
+
+## data/existing-timings.js
+
+Snapshot des timings de versets déjà posés dans `audios.ts` (tafsir-app),
+verset uniquement — les mots sont volontairement absents (le mode mots
+part toujours de zéro pour un verset donné, quel que soit ce qui existe
+déjà). Régénéré par `sync-existing-timings.mjs` (`node
+sync-existing-timings.mjs [chemin-vers-tafsir-app]`, défaut :
+`../tafsir-app`) plutôt que copié à la main comme avant — à relancer après
+chaque session de marquage collée dans `audios.ts` pour que la liste des
+versets déjà posés reste à jour.

@@ -646,8 +646,9 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Fin de verset marquée');
     });
     
-    // Normaliser : aligne la fin de chaque verset sur le début du suivant
-    // (comble les trous, résorbe les chevauchements). Confirmation
+    // Normaliser : aligne la fin de chaque verset à GAP avant le début du
+    // suivant (comble les trous, résorbe les chevauchements) plutôt que de
+    // les accoler exactement — voir GAP dans verse-timeline.js. Confirmation
     // préalable seulement si ça va vider des mots déjà marqués — même
     // invariant que l'édition manuelle d'une borne (setBoundary).
     normalizeBtn.addEventListener('click', function() {

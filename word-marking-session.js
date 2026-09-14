@@ -30,6 +30,17 @@
 // (afficher une confirmation, une notification, etc.), et de rappeler
 // avec { force: true } si l'utilisateur confirme.
 
+// Écart volontaire entre la fin d'un mot et le début du suivant — sans
+// lui, endTime[i] === startTime[i+1] exactement, et le highlighter de
+// tafsir-app (intervalle fermé des deux côtés : time >= start && time <=
+// end) matche les deux à cet instant précis, ce qui peut faire scintiller
+// le surlignage à la frontière. Même valeur que tools/normalize-timing-
+// gaps.mjs côté tafsir-app. Le champ directement édité par l'utilisateur
+// garde l'instant observé tel quel ; c'est le voisin déplacé en cascade
+// qui reçoit le décalage (- GAP si on referme un end en cascade, + GAP si
+// on ouvre un start en cascade).
+const GAP = 0.01;
+
 export class WordMarkingSession {
     #collaborator;
     #wordListProvider;
@@ -39,6 +50,17 @@ export class WordMarkingSession {
     #activeExtraWordIndex = null;
     #pendingVerseOccurrenceRef = null;
     #wordMarkingLocked = false;
+
+    // Le mot que terminateWord() vient de refermer, avec l'instant utilisé —
+    // toggleExtraOccurrence()/advanceOccurrence() le consomment juste après
+    // pour resserrer de GAP cette fin si la nouvelle occurrence démarre au
+    // même instant (l'opérateur a cliqué "Terminer ce mot" puis "Ajouter une
+    // occurrence" sans bouger la lecture, deux clics séparés qui décrivent
+    // pourtant la même frontière). Toute autre méthode qui avance l'état
+    // (markWord, correctWord, setWordTime, undoWord) l'invalide : au-delà de
+    // l'action qui suit immédiatement le clic "Terminer", il ne représente
+    // plus rien.
+    #justTerminated = null;
 
     constructor({ verses, wordList }) {
         this.#collaborator = verses;
@@ -122,6 +144,7 @@ export class WordMarkingSession {
         this.#wordViewIndex = verseRef.words.length;
         this.#activeExtraWordIndex = null;
         this.#pendingVerseOccurrenceRef = null;
+        this.#justTerminated = null;
 
         return {
             ok: true,
@@ -140,6 +163,7 @@ export class WordMarkingSession {
         this.#wordViewIndex = 0;
         this.#activeExtraWordIndex = null;
         this.#pendingVerseOccurrenceRef = null;
+        this.#justTerminated = null;
         return { ok: true };
     }
 
@@ -206,6 +230,20 @@ export class WordMarkingSession {
     // AUTRE mot démarre avant cette fin, c'est la preuve que le cheikh a
     // repris la parole plus tôt que prévu : on resserre la fin du dernier
     // mot sur ce début plutôt que de laisser l'approximation.
+    // Consomme #justTerminated : si le mot fermé par le dernier
+    // terminateWord() l'a été exactement à `time`, c'est que l'opérateur a
+    // enchaîné "Terminer ce mot" puis "Ajouter une occurrence" sans bouger
+    // la lecture — les deux clics décrivent la même frontière, à resserrer
+    // de GAP comme n'importe quel autre chaînage. Toujours appelé, même
+    // quand rien à faire, pour ne jamais laisser une référence périmée.
+    #consumeJustTerminated(time) {
+        const pending = this.#justTerminated;
+        this.#justTerminated = null;
+        if (pending && pending.time === time && pending.primary.end === time) {
+            pending.primary.end = time - GAP;
+        }
+    }
+
     #shrinkLastWordEndIfNeeded(verse, newOccurrenceWordIndex, startTime) {
         const total = this.#wordListProvider(verse.id)?.length;
         if (!total) return null;
@@ -214,9 +252,13 @@ export class WordMarkingSession {
         if (verse.words.length <= lastIndex) return null;
 
         const lastWordPrimary = verse.words[lastIndex][0];
-        if (lastWordPrimary.end !== null && startTime < lastWordPrimary.end) {
-            lastWordPrimary.end = startTime;
-            return { wordIndex: lastIndex, shrunkTo: startTime };
+        // <= et pas < : une nouvelle occurrence qui démarre PILE sur
+        // l'approximation par défaut (verse.end) est le cas le plus commun
+        // de collision, pas une exception — un simple < le ratait.
+        if (lastWordPrimary.end !== null && startTime <= lastWordPrimary.end) {
+            const shrunkTo = startTime - GAP;
+            lastWordPrimary.end = shrunkTo;
+            return { wordIndex: lastIndex, shrunkTo };
         }
         return null;
     }
@@ -230,11 +272,22 @@ export class WordMarkingSession {
         const doneCount = verse.words.length;
         if (doneCount >= wordList.length) return { ok: false, reason: 'all-words-marked' };
 
+        this.#justTerminated = null;
+
         // Le clic marque le début du mot en cours. Si un mot précédent est
         // encore ouvert (pas de end), ce même instant en marque la fin —
-        // les mots d'un verset se suivent sans blanc entre eux.
+        // moins GAP, pour laisser un petit écart plutôt qu'une frontière
+        // exactement accolée entre les deux mots. Le "si encore ouvert" est
+        // vérifié explicitement : sans ce garde-fou, marquer ce mot
+        // écraserait silencieusement la fin d'un mot précédent déjà fermé à
+        // la main (via "Terminer ce mot") avant d'y ajouter des occurrences
+        // — bug réel observé sur un mot resté "ouvert" en apparence alors
+        // que sa vraie fin avait déjà été posée ailleurs entre-temps.
         if (doneCount > 0) {
-            verse.words[doneCount - 1][0].end = time;
+            const prevPrimary = verse.words[doneCount - 1][0];
+            if (prevPrimary.end === null) {
+                prevPrimary.end = time - GAP;
+            }
         }
 
         const isLastWord = doneCount === wordList.length - 1;
@@ -250,22 +303,28 @@ export class WordMarkingSession {
     }
 
     // Recale le début d'un mot déjà marqué sans devoir tout annuler après
-    // lui. Comme les mots d'un verset se suivent sans blanc, redéfinir le
-    // début du mot N déplace aussi la fin du mot N-1 au même instant.
+    // lui. Redéfinir le début du mot N déplace aussi la fin du mot N-1
+    // (à GAP près, plutôt que sur le même instant exact).
     correctWord(time) {
         if (!this.isOpen()) return { ok: false, reason: 'not-open' };
         const verse = this.#verseRef;
         if (this.#wordViewIndex >= verse.words.length) return { ok: false, reason: 'no-word-at-view' };
 
+        this.#justTerminated = null;
         verse.words[this.#wordViewIndex][0].start = time;
         if (this.#wordViewIndex > 0) {
-            verse.words[this.#wordViewIndex - 1][0].end = time;
+            verse.words[this.#wordViewIndex - 1][0].end = time - GAP;
         }
         return { ok: true, wordIndex: this.#wordViewIndex };
     }
 
     // Ferme directement la principale encore ouverte du mot affiché (seul
-    // le mot le plus récemment marqué peut être dans ce cas).
+    // le mot le plus récemment marqué peut être dans ce cas). Garde
+    // l'instant observé tel quel — mais si l'action suivante ouvre une
+    // occurrence au même instant (voir #justTerminated), cette fin sera
+    // resserrée de GAP rétroactivement : deux clics séparés qui décrivent en
+    // réalité la même frontière entre "ce mot se tait" et "l'occurrence
+    // commence".
     terminateWord(time) {
         if (!this.isOpen()) return { ok: false, reason: 'not-open' };
         const verse = this.#verseRef;
@@ -273,6 +332,7 @@ export class WordMarkingSession {
         if (!primary || primary.end !== null) return { ok: false, reason: 'no-open-primary' };
 
         primary.end = time;
+        this.#justTerminated = { primary, time };
         return { ok: true, wordIndex: this.#wordViewIndex };
     }
 
@@ -281,12 +341,15 @@ export class WordMarkingSession {
     // l'édition depuis la liste plutôt que mot par mot avec "Recaler"/
     // "Terminer". Ne touche que l'occurrence principale (index 0).
     //
-    // Même règle de chaînage que correctWord()/terminateWord() : les mots
-    // d'un verset se suivent sans blanc, donc modifier une des deux bornes
-    // d'une frontière entre deux mots déplace l'autre borne au même
-    // instant. Exception : la fin du dernier mot n'a pas de mot suivant
-    // avec qui chaîner — elle se découple de verse.end (ce n'était qu'une
-    // valeur par défaut, pas une vraie observation).
+    // Même règle de chaînage que correctWord()/terminateWord() : modifier
+    // une des deux bornes d'une frontière entre deux mots déplace l'autre
+    // borne en cascade, à GAP près plutôt que sur le même instant exact
+    // (- GAP sur la fin quand on recale un début, + GAP sur le début
+    // suivant quand on recale une fin — le champ édité directement garde
+    // toujours l'instant observé tel quel). Exception : la fin du dernier
+    // mot n'a pas de mot suivant avec qui chaîner — elle se découple de
+    // verse.end (ce n'était qu'une valeur par défaut, pas une vraie
+    // observation).
     setWordTime(wordIndex, field, time) {
         if (!this.isOpen()) return { ok: false, reason: 'not-open' };
         const verse = this.#verseRef;
@@ -294,16 +357,17 @@ export class WordMarkingSession {
             return { ok: false, reason: 'no-word-at-index' };
         }
 
+        this.#justTerminated = null;
         const primary = verse.words[wordIndex][0];
         if (field === 'start') {
             primary.start = time;
             if (wordIndex > 0) {
-                verse.words[wordIndex - 1][0].end = time;
+                verse.words[wordIndex - 1][0].end = time - GAP;
             }
         } else {
             primary.end = time;
             if (verse.words.length > wordIndex + 1) {
-                verse.words[wordIndex + 1][0].start = time;
+                verse.words[wordIndex + 1][0].start = time + GAP;
             }
         }
         return { ok: true };
@@ -330,6 +394,7 @@ export class WordMarkingSession {
         const verse = this.#verseRef;
         if (verse.words.length === 0) return { ok: false, reason: 'nothing-to-undo' };
 
+        this.#justTerminated = null;
         verse.words.pop();
         if (verse.words.length > 0) {
             verse.words[verse.words.length - 1][0].end = null;
@@ -341,9 +406,9 @@ export class WordMarkingSession {
     // Occurrences supplémentaires : le cheikh peut redire un mot, ou une
     // suite de mots, plus tard dans le même passage. Un clic démarre une
     // occurrence sur le mot affiché ; recliquer dessus la termine. Naviguer
-    // vers un autre mot puis rappeler ferme l'occurrence en cours à cet
-    // instant et en ouvre une nouvelle là — ce qui enchaîne une phrase
-    // répétée sur plusieurs mots.
+    // vers un autre mot puis rappeler ferme l'occurrence en cours (à GAP
+    // près) et en ouvre une nouvelle à cet instant — ce qui enchaîne une
+    // phrase répétée sur plusieurs mots.
     toggleExtraOccurrence(time) {
         if (!this.isOpen()) return { ok: false, reason: 'not-open' };
         if (this.#wordMarkingLocked) return { ok: false, reason: 'locked' };
@@ -351,6 +416,7 @@ export class WordMarkingSession {
         const viewIndex = this.#wordViewIndex;
 
         if (this.#activeExtraWordIndex === viewIndex) {
+            this.#justTerminated = null;
             const occurrences = verse.words[viewIndex];
             occurrences[occurrences.length - 1].end = time;
             this.#activeExtraWordIndex = null;
@@ -364,9 +430,11 @@ export class WordMarkingSession {
         const primary = verse.words[viewIndex][0];
         if (primary.end === null) return { ok: false, reason: 'primary-open' };
 
+        this.#consumeJustTerminated(time);
+
         if (this.#activeExtraWordIndex !== null) {
             const other = verse.words[this.#activeExtraWordIndex];
-            other[other.length - 1].end = time;
+            other[other.length - 1].end = time - GAP;
         }
 
         verse.words[viewIndex].push({ start: time, end: null });
@@ -375,9 +443,10 @@ export class WordMarkingSession {
         return { ok: true, action: 'opened', shrunk };
     }
 
-    // Ferme l'occurrence ouverte sur le mot courant ET en ouvre une sur le
-    // mot suivant, au même instant — un seul appel pour enchaîner une
-    // phrase répétée, sans naviguer mot par mot entre chaque occurrence.
+    // Ferme l'occurrence ouverte sur le mot courant (à GAP près) ET en
+    // ouvre une sur le mot suivant à cet instant — un seul appel pour
+    // enchaîner une phrase répétée, sans naviguer mot par mot entre
+    // chaque occurrence.
     advanceOccurrence(time) {
         if (!this.isOpen()) return { ok: false, reason: 'not-open' };
         if (this.#wordMarkingLocked) return { ok: false, reason: 'locked' };
@@ -397,8 +466,9 @@ export class WordMarkingSession {
         if (!target) return { ok: false, reason: 'target-not-marked' };
         if (target[0].end === null) return { ok: false, reason: 'target-primary-open' };
 
+        this.#justTerminated = null;
         const current = verse.words[viewIndex];
-        current[current.length - 1].end = time;
+        current[current.length - 1].end = time - GAP;
 
         this.#wordViewIndex = targetIndex;
         verse.words[targetIndex].push({ start: time, end: null });
