@@ -9649,9 +9649,9 @@ const EXISTING_TIMINGS = {
       id: "an-nasr-1",
       title: "Tafsir An-Nasr",
       timings: [
-        { id: 1, startTime: 22.05, endTime: 36.01, words: [[{"startTime":22.05,"endTime":26.51}],[{"startTime":26.52,"endTime":29.69}],[{"startTime":29.7,"endTime":30.22}],[{"startTime":30.23,"endTime":32.72}],[{"startTime":32.73,"endTime":36.01}]] },
-        { id: 2, startTime: 37.19, endTime: 52.33, words: [[{"startTime":37.34,"endTime":38.54}],[{"startTime":38.55,"endTime":42.84}],[{"startTime":42.85,"endTime":45.17}],[{"startTime":45.18,"endTime":45.33}],[{"startTime":45.34,"endTime":45.91}],[{"startTime":45.92,"endTime":48.6}],[{"startTime":48.61,"endTime":52.33}]] },
-        { id: 3, startTime: 52.6, endTime: 239.87, words: [[{"startTime":52.6,"endTime":58.1}],[{"startTime":58.11,"endTime":58.73},{"startTime":62.82,"endTime":63.39}],[{"startTime":58.74,"endTime":67.79},{"startTime":63.4,"endTime":67.79}],[{"startTime":67.8,"endTime":73.24}],[{"startTime":73.25,"endTime":77.13}],[{"startTime":77.14,"endTime":78.77}],[{"startTime":78.78,"endTime":239.87}]] },
+        { id: 1, startTime: 22.24, endTime: 37.18, words: [[{"startTime":22.24,"endTime":26.71}],[{"startTime":26.72,"endTime":29.58}],[{"startTime":29.59,"endTime":30.7}],[{"startTime":30.71,"endTime":32.78}],[{"startTime":32.79,"endTime":37.18}]] },
+        { id: 2, startTime: 37.19, endTime: 53.42, words: [[{"startTime":37.19,"endTime":38.66}],[{"startTime":38.67,"endTime":42.57}],[{"startTime":42.58,"endTime":45.25}],[{"startTime":45.26,"endTime":45.5}],[{"startTime":45.51,"endTime":45.98}],[{"startTime":45.99,"endTime":48.98}],[{"startTime":48.99,"endTime":53.42}]] },
+        { id: 3, startTime: 53.43, endTime: 239.87, words: [[{"startTime":53.43,"endTime":58.13}],[{"startTime":58.14,"endTime":59.38},{"startTime":62.86,"endTime":64}],[{"startTime":59.39,"endTime":62.85},{"startTime":64.01,"endTime":67.92}],[{"startTime":67.93,"endTime":73.69}],[{"startTime":73.7,"endTime":77.59}],[{"startTime":77.6,"endTime":78.94}],[{"startTime":78.95,"endTime":239.87}]] },
       ],
     },
   ],
