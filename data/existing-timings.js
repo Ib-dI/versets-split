@@ -9624,8 +9624,8 @@ const EXISTING_TIMINGS = {
       id: "al-kawthar-1",
       title: "Tafsir Al-Kawthar",
       timings: [
-        { id: 1, startTime: 93.52, endTime: 126.5, words: [[{"startTime":93.52,"endTime":98.19}],[{"startTime":98.2,"endTime":105.3}],[{"startTime":105.31,"endTime":126.5}]] },
-        { id: 2, startTime: 128.08, endTime: 165.93, words: [[{"startTime":128.08,"endTime":131.99},{"startTime":137.5,"endTime":140.32}],[{"startTime":132,"endTime":143.5},{"startTime":140.33,"endTime":143.5}],[{"startTime":143.51,"endTime":165.93}]] },
+        { id: 1, startTime: 93.52, endTime: 128.07, words: [[{"startTime":93.52,"endTime":98.74},{"startTime":109.99,"endTime":114.06}],[{"startTime":98.75,"endTime":105.11},{"startTime":114.07,"endTime":118.33}],[{"startTime":105.12,"endTime":109.98},{"startTime":118.34,"endTime":128.08}]] },
+        { id: 2, startTime: 128.08, endTime: 166.14, words: [[{"startTime":128.08,"endTime":132.57},{"startTime":137.92,"endTime":140.67}],[{"startTime":132.58,"endTime":137.91},{"startTime":140.68,"endTime":143.47}],[{"startTime":143.48,"endTime":166.14}]] },
         { id: 3, startTime: 166.15, endTime: 244.62, words: [[{"startTime":166.15,"endTime":167.43},{"startTime":222.17,"endTime":222.82}],[{"startTime":167.44,"endTime":172.21},{"startTime":222.83,"endTime":227}],[{"startTime":172.22,"endTime":173.05},{"startTime":227.01,"endTime":227.75}],[{"startTime":173.06,"endTime":222.17},{"startTime":227.76,"endTime":244.57}]] },
       ],
     },
