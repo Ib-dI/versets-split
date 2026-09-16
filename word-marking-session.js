@@ -272,7 +272,11 @@ export class WordMarkingSession {
         const doneCount = verse.words.length;
         if (doneCount >= wordList.length) return { ok: false, reason: 'all-words-marked' };
 
-        this.#justTerminated = null;
+        // Consomme #justTerminated : si le mot précédent (ou l'occurrence
+        // qui vient de le refermer) a été fermé pile sur ce même instant,
+        // resserre cette fin de GAP au lieu de laisser deux frontières
+        // accolées à zéro écart.
+        this.#consumeJustTerminated(time);
 
         // Le clic marque le début du mot en cours. Si un mot précédent est
         // encore ouvert (pas de end), ce même instant en marque la fin —
@@ -416,10 +420,15 @@ export class WordMarkingSession {
         const viewIndex = this.#wordViewIndex;
 
         if (this.#activeExtraWordIndex === viewIndex) {
-            this.#justTerminated = null;
             const occurrences = verse.words[viewIndex];
-            occurrences[occurrences.length - 1].end = time;
+            const closedOccurrence = occurrences[occurrences.length - 1];
+            closedOccurrence.end = time;
             this.#activeExtraWordIndex = null;
+            // Comme terminateWord() : si l'action suivante (typiquement
+            // markWord() du mot suivant) tombe pile sur ce même instant, sa
+            // fin sera resserrée de GAP rétroactivement plutôt que de
+            // laisser deux frontières accolées à zéro écart.
+            this.#justTerminated = { primary: closedOccurrence, time };
             // Si le mot qu'on vient de refermer est le dernier marqué, la
             // phrase répétée est terminée et on repasse au marquage normal :
             // avancer la vue sur l'emplacement "à marquer" suivant, comme le

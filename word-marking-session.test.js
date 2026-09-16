@@ -247,6 +247,35 @@ test('toggleExtraOccurrence referme une occurrence sur le dernier mot marqué et
     assert.equal(session.describe().viewIndex, 1);
 });
 
+test('toggleExtraOccurrence puis markWord au même instant laisse un GAP', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1); // mot 0, principale ouverte
+    session.setViewIndex(0);
+    session.terminateWord(5); // ferme la principale du mot 0 à la main
+
+    session.toggleExtraOccurrence(10); // occurrence sur le mot 0
+    session.toggleExtraOccurrence(11); // la referme à 11, avance sur l'emplacement suivant
+
+    const r = session.markWord(11); // même instant, sans bouger la lecture
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][1].end, 10.99); // occurrence resserrée de GAP
+    assert.equal(verses[0].words[1][0].start, 11); // mot 1 garde l'instant observé tel quel
+});
+
+test('toggleExtraOccurrence puis markWord à un autre instant ne touche rien', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.setViewIndex(0);
+    session.terminateWord(5);
+
+    session.toggleExtraOccurrence(10);
+    session.toggleExtraOccurrence(11); // referme à 11
+
+    session.markWord(15); // lecture déplacée entre-temps
+    assert.equal(verses[0].words[0][1].end, 11); // inchangé
+    assert.equal(verses[0].words[1][0].start, 15);
+});
+
 test('toggleExtraOccurrence referme une occurrence sur un mot du milieu sans avancer la vue', () => {
     const { session } = openVerse();
     session.markWord(1);
