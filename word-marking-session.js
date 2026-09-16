@@ -420,6 +420,18 @@ export class WordMarkingSession {
             const occurrences = verse.words[viewIndex];
             occurrences[occurrences.length - 1].end = time;
             this.#activeExtraWordIndex = null;
+            // Si le mot qu'on vient de refermer est le dernier marqué, la
+            // phrase répétée est terminée et on repasse au marquage normal :
+            // avancer la vue sur l'emplacement "à marquer" suivant, comme le
+            // fait markWord(), pour ne pas devoir naviguer à la main avec
+            // "mot suivant" avant que "Marquer ce mot" ne redevienne
+            // disponible. Ne rien faire quand ce n'est pas le dernier mot :
+            // on est en train de revoir/corriger un mot du milieu, où sauter
+            // à la fin surprendrait plus qu'il n'aiderait.
+            const total = this.#wordListProvider(verse.id)?.length ?? 0;
+            if (viewIndex === verse.words.length - 1 && verse.words.length < total) {
+                this.#wordViewIndex = verse.words.length;
+            }
             return { ok: true, action: 'closed' };
         }
 

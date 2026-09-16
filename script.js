@@ -1454,6 +1454,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // gardé ici en filet de sécurité.
             if (result.reason === 'primary-open') {
                 showNotification('Ce mot a encore une occurrence principale ouverte — termine-la d\'abord ("Terminer ce mot ici").');
+            } else if (result.reason === 'no-word-at-view') {
+                showNotification('Ce mot n\'a pas encore d\'occurrence principale — marque-le d\'abord normalement.');
             }
             return;
         }

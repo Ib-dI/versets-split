@@ -233,6 +233,34 @@ test('toggleExtraOccurrence ouvre puis referme une occurrence supplémentaire', 
     assert.equal(verses[0].words[0][1].end, 10.5);
 });
 
+test('toggleExtraOccurrence referme une occurrence sur le dernier mot marqué et avance la vue', () => {
+    const { session } = openVerse();
+    session.markWord(1); // mot 0, principale ouverte
+    session.setViewIndex(0);
+    session.terminateWord(5); // ferme la principale du mot 0 à la main (mot 1 pas encore marqué)
+
+    session.toggleExtraOccurrence(10); // occurrence sur le mot 0 (dernier marqué)
+    const r = session.toggleExtraOccurrence(10.5); // la referme
+
+    assert.equal(r.action, 'closed');
+    assert.equal(session.describe().isPendingSlot, true);
+    assert.equal(session.describe().viewIndex, 1);
+});
+
+test('toggleExtraOccurrence referme une occurrence sur un mot du milieu sans avancer la vue', () => {
+    const { session } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(3); // les 3 mots ont une principale fermée
+
+    session.setViewIndex(0);
+    session.toggleExtraOccurrence(10); // occurrence sur le mot 0 (pas le dernier)
+    const r = session.toggleExtraOccurrence(10.5); // la referme
+
+    assert.equal(r.action, 'closed');
+    assert.equal(session.describe().viewIndex, 0);
+});
+
 test('advanceOccurrence enchaîne une occurrence sur le mot suivant', () => {
     const { session, verses } = openVerse();
     session.markWord(1);
