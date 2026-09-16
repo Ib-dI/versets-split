@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const closeWordModeBtn = document.getElementById('closeWordModeBtn');
     const prevVerseWordsBtn = document.getElementById('prevVerseWordsBtn');
     const nextVerseWordsBtn = document.getElementById('nextVerseWordsBtn');
-    const seekNextVerseWordsBtn = document.getElementById('seekNextVerseWordsBtn');
+    const seekVerseEndBtn = document.getElementById('seekVerseEndBtn');
     const extraOccurrencesSection = document.getElementById('extraOccurrencesSection');
     const extraOccurrencesList = document.getElementById('extraOccurrencesList');
     const toggleExtraOccurrenceBtn = document.getElementById('toggleExtraOccurrenceBtn');
@@ -1224,7 +1224,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `· ${snap.verseStart.toFixed(2)} → ${snap.verseEnd !== null ? snap.verseEnd.toFixed(2) : '?'}`;
         prevWordBtn.disabled = !snap.canGoPrev;
         nextWordBtn.disabled = !snap.canGoNext;
-        seekNextVerseWordsBtn.disabled = !timeSource.isReady() || !snap.hasNextVerse;
+        seekVerseEndBtn.disabled = !timeSource.isReady();
 
         wordProgress.textContent = snap.wordProgressText;
         renderWordCarousel(snap.words, snap.viewIndex);
@@ -1565,20 +1565,17 @@ document.addEventListener('DOMContentLoaded', function() {
         applyCloseEffects();
     });
 
-    // Avance l'audio au début du verset suivant sans changer le verset
-    // ouvert dans le panneau mots — utile pour repérer où il commence
+    // Avance l'audio à la fin du verset courant sans changer le verset
+    // ouvert dans le panneau mots — utile pour repérer où il se termine
     // (ex. pour caler la fin du dernier mot) sans perdre le contexte de
     // marquage en cours (contrairement à "Verset suivant" qui bascule dessus).
-    seekNextVerseWordsBtn.addEventListener('click', function() {
+    seekVerseEndBtn.addEventListener('click', function() {
         if (!wordSession.isOpen() || !timeSource.isReady()) return;
-        const nextVerse = verses[wordSession.getCurrentIndex() + 1];
-        if (!nextVerse) {
-            showNotification('Aucun verset suivant');
-            return;
-        }
-        timeSource.seek(nextVerse.start);
+        const verse = verses[wordSession.getCurrentIndex()];
+        if (!verse || verse.end === null) return;
+        timeSource.seek(verse.end);
         updateTimeDisplay();
-        showNotification(`Audio avancé à ${nextVerse.start.toFixed(2)}s (verset ${nextVerse.id})`);
+        showNotification(`Audio avancé à ${verse.end.toFixed(2)}s (fin du verset ${verse.id})`);
     });
 
     // Passe directement au mode mots du prochain verset marquable (données

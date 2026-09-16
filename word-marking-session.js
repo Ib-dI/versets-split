@@ -617,7 +617,6 @@ export class WordMarkingSession {
 
         const currentIndex = this.getCurrentIndex();
         const verseCount = this.#collaborator.getVerseCount();
-        const hasNextVerse = currentIndex !== -1 && currentIndex + 1 < verseCount;
 
         return {
             isOpen: true,
@@ -634,7 +633,6 @@ export class WordMarkingSession {
             isPendingSlot,
             canGoPrev: viewIndex > 0,
             canGoNext: viewIndex < maxIndex,
-            hasNextVerse,
             wordProgressText: isPendingSlot
                 ? `Mot ${viewIndex + 1} / ${total} — à marquer`
                 : `Mot ${viewIndex + 1} / ${total}` + (doneCount >= total ? ' — tous les mots sont marqués' : ' (déjà marqué)'),

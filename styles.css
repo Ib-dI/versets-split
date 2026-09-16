@@ -1040,9 +1040,9 @@ textarea:focus {
 }
 
 /* Actions occasionnelles liées à l'en-tête du panneau mots (occurrence de
-   verset, seek au verset suivant) — volontairement plus discrètes que les
-   gros boutons d'action de word-mode-actions : ce ne sont pas des étapes du
-   flux principal de marquage. */
+   verset, seek à la fin du verset courant) — volontairement plus discrètes
+   que les gros boutons d'action de word-mode-actions : ce ne sont pas des
+   étapes du flux principal de marquage. */
 .header-action-btn {
   display: inline-flex;
   align-items: center;
