@@ -508,7 +508,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // uniquement quand la section occurrences est affichée — on
         // retrouve donc cette même condition via snap.extra (non nul
         // seulement dans ce cas) plutôt que de se fier à un .disabled/
-        // display potentiellement obsolète.
+        // display potentiellement obsolète. « y » avance l'audio à la fin
+        // du verset courant (seekVerseEndBtn).
         if (wordSession.isOpen()) {
             // Testé avant le .toLowerCase() ci-dessous : « G » (Maj+g) doit
             // rester distinct de « g » seul.
@@ -557,6 +558,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.preventDefault();
                 const d = wordSession.describe();
                 if (!d.isPendingSlot && d.primary?.open) terminateWordBtn.click();
+                return;
+            }
+            if (key === 'y') {
+                e.preventDefault();
+                seekVerseEndBtn.click();
                 return;
             }
         }
