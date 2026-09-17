@@ -1189,6 +1189,11 @@ textarea:focus {
   font-weight: 600;
 }
 
+.word-marked-row.skipped {
+  opacity: 0.55;
+  font-style: italic;
+}
+
 .dark-mode .word-marked-row:hover {
   background: rgba(255, 255, 255, 0.07);
 }

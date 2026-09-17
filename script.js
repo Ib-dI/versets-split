@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const wordCarousel = document.getElementById('wordCarousel');
     const wordCarouselTrack = document.getElementById('wordCarouselTrack');
     const markWordBtn = document.getElementById('markWordBtn');
+    const skipWordBtn = document.getElementById('skipWordBtn');
     const correctWordBtn = document.getElementById('correctWordBtn');
     const terminateWordBtn = document.getElementById('terminateWordBtn');
     const undoWordBtn = document.getElementById('undoWordBtn');
@@ -485,7 +486,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Mode mots ouvert : « f » marque le mot en cours (au clavier plutôt
         // qu'à la souris, pour caler l'instant exact pendant l'écoute sans
-        // lâcher les touches), « s » annule le dernier mot marqué, « g »/
+        // lâcher les touches), « k » marque le mot en attente comme non
+        // prononcé (skipWordBtn — même condition d'affichage que markWordBtn,
+        // isPendingSlot), « s » annule le dernier mot marqué, « g »/
         // « Maj+G » passent au verset suivant/précédent marquable (même
         // effet que nextVerseWordsBtn/prevVerseWordsBtn, avec leur garde
         // withLeaveConfirm), « h »/« j » reculent/avancent d'un mot (même
@@ -522,6 +525,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (key === 'f') {
                 e.preventDefault();
                 if (wordSession.describe().isPendingSlot) markWordBtn.click();
+                return;
+            }
+            if (key === 'k') {
+                e.preventDefault();
+                if (wordSession.describe().isPendingSlot) skipWordBtn.click();
                 return;
             }
             if (key === 's') {
@@ -1237,12 +1245,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (snap.isPendingSlot) {
             markWordBtn.style.display = '';
+            skipWordBtn.style.display = '';
             correctWordBtn.style.display = 'none';
             terminateWordBtn.style.display = 'none';
             markWordBtn.disabled = snap.wordMarkingLocked;
+            skipWordBtn.disabled = snap.wordMarkingLocked;
             extraOccurrencesSection.style.display = 'none';
         } else {
             markWordBtn.style.display = 'none';
+            skipWordBtn.style.display = 'none';
             correctWordBtn.style.display = '';
             correctWordBtn.textContent = `Recaler le début ici (actuel : ${snap.primary.start.toFixed(2)}s)`;
             correctWordBtn.disabled = snap.wordMarkingLocked;
@@ -1269,7 +1280,7 @@ document.addEventListener('DOMContentLoaded', function() {
         wordMarkedList.innerHTML = '';
         snap.markedWords.forEach((w) => {
             const row = document.createElement('div');
-            row.className = 'word-marked-row' + (w.isActive ? ' active' : '');
+            row.className = 'word-marked-row' + (w.isActive ? ' active' : '') + (w.isSkipped ? ' skipped' : '');
             row.title = 'Cliquer sur le mot pour le revoir, sur un temps pour le modifier';
 
             row.appendChild(document.createTextNode(w.isActive ? '→ ' : '　'));
@@ -1294,6 +1305,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 onCommit: (time) => commitWordTime(w.index, 'end', time),
                 onCancel: () => renderWordMode(),
             }));
+            if (w.isSkipped) {
+                row.appendChild(document.createTextNode(' (non prononcé)'));
+            }
             if (w.extraCount > 0) {
                 row.appendChild(document.createTextNode(
                     ` (+${w.extraCount} occurrence${w.extraCount > 1 ? 's' : ''})`,
@@ -1533,6 +1547,26 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!result.ok) return;
         if (result.allWordsMarked) {
             showNotification(`Verset ${currentVerseId} : tous les mots sont marqués`);
+        }
+        renderWordMode();
+        updateVerseList();
+    });
+
+    // Le cheikh ne dit pas ce mot dans cette instance de récitation :
+    // plutôt que de lui inventer un instant audio pour pouvoir avancer
+    // (source des durées nulles/négatives observées côté tafsir-app), le
+    // marqueur posé est toujours à largeur nulle, calé sur la fin du mot
+    // précédent — indépendant de la position de lecture actuelle.
+    skipWordBtn.addEventListener('click', function() {
+        if (!wordSession.isOpen() || !timeSource.isReady()) return;
+        const time = timeSource.now();
+        const currentVerseId = verses[wordSession.getCurrentIndex()].id;
+        const result = wordSession.skipWord(time);
+        if (!result.ok) return;
+        if (result.allWordsMarked) {
+            showNotification(`Verset ${currentVerseId} : tous les mots sont marqués (dernier mot non prononcé)`);
+        } else {
+            showNotification('Mot marqué comme non prononcé');
         }
         renderWordMode();
         updateVerseList();

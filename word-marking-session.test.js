@@ -82,6 +82,84 @@ test('markWord est bloqué par le verrou anti-clic-réflexe (bug corrigé : mark
     assert.equal(r.reason, 'locked');
 });
 
+test('skipWord sur le tout premier mot le cale sur verse.start, à largeur nulle', () => {
+    const { session, verses } = openVerse();
+    const r = session.skipWord(5); // instant de lecture ignoré pour le tout premier mot
+    assert.equal(r.ok, true);
+    assert.equal(r.allWordsMarked, false);
+    assert.deepEqual(verses[0].words[0][0], { start: 0, end: 0 }); // verse.start, pas 5
+});
+
+test('skipWord enchaîne sur la fin du mot précédent, pas sur l\'instant de lecture', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1); // mot 0, principale ouverte
+    session.setViewIndex(0);
+    session.terminateWord(2); // mot 0 fermé explicitement à 2.0
+
+    const r = session.skipWord(50); // mot 1 sauté, lecture très avancée sans effet
+    assert.equal(r.ok, true);
+    assert.deepEqual(verses[0].words[1][0], { start: 2, end: 2 });
+});
+
+test('skipWord referme un mot précédent resté ouvert avant de s\'y ancrer', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1); // mot 0 ouvert (end: null)
+
+    const r = session.skipWord(10);
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words[0][0].end, 9.99); // refermé à GAP avant 10
+    assert.deepEqual(verses[0].words[1][0], { start: 9.99, end: 9.99 });
+});
+
+test('skipWord sur le dernier mot recale verse.end sur l\'ancre', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1); // mot 0
+    session.markWord(2); // referme le mot 0 à 1.99, ouvre le mot 1
+    session.setViewIndex(1);
+    session.terminateWord(5); // mot 1 fermé explicitement à 5
+
+    const r = session.skipWord(9); // 3e et dernier mot, sauté — 9 ignoré
+    assert.equal(r.ok, true);
+    assert.equal(r.allWordsMarked, true);
+    assert.deepEqual(verses[0].words[2][0], { start: 5, end: 5 });
+    assert.equal(verses[0].end, 5); // recalé, plus 30
+});
+
+test('deux skipWord consécutifs partagent la même ancre', () => {
+    const { session, verses } = openVerse();
+    session.skipWord(10); // mot 0 sauté, ancré sur verse.start (0), pas 10
+    session.skipWord(20); // mot 1 sauté, même ancre (0) — pas 20
+
+    assert.deepEqual(verses[0].words[0][0], { start: 0, end: 0 });
+    assert.deepEqual(verses[0].words[1][0], { start: 0, end: 0 });
+});
+
+test('skipWord refuse au-delà du dernier mot et sous le verrou', () => {
+    const { session } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(3);
+    let r = session.skipWord(4);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'all-words-marked');
+
+    const { session: locked } = openVerse();
+    locked.setWordMarkingLocked(true);
+    r = locked.skipWord(1);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'locked');
+});
+
+test('describe() marque isSkipped sur un mot sauté, pas sur un mot normal', () => {
+    const { session } = openVerse();
+    session.markWord(1);
+    session.skipWord(10);
+
+    const words = session.describe().markedWords;
+    assert.equal(words[0].isSkipped, false);
+    assert.equal(words[1].isSkipped, true);
+});
+
 test('correctWord recale le début et déplace la fin du mot précédent', () => {
     const { session, verses } = openVerse();
     session.markWord(1);

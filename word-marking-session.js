@@ -306,6 +306,54 @@ export class WordMarkingSession {
         return { ok: true, allWordsMarked: isLastWord };
     }
 
+    // Marque le mot en attente comme non prononcé dans cette instance de
+    // récitation (le cheikh l'a sauté) — sans quoi il fallait lui inventer
+    // un instant audio pour pouvoir avancer, ce qui produisait des durées
+    // nulles ou négatives selon où tombait la lecture (voir
+    // docs/timing-anomalies.md côté tafsir-app, motif observé plusieurs
+    // fois). Le marqueur est toujours à largeur nulle et calé sur la fin
+    // du mot précédent (ou le début du verset pour le tout premier mot) —
+    // jamais sur l'instant de lecture courant, pour ne jamais produire de
+    // durée négative en sautant plusieurs mots de suite pendant que
+    // l'audio avance. Si le mot précédent est encore ouvert, ce même appel
+    // le referme d'abord (comme markWord) avant de caler l'ancre dessus.
+    skipWord(time) {
+        if (!this.isOpen()) return { ok: false, reason: 'not-open' };
+        if (this.#wordMarkingLocked) return { ok: false, reason: 'locked' };
+
+        const verse = this.#verseRef;
+        const wordList = this.#wordListProvider(verse.id);
+        const doneCount = verse.words.length;
+        if (doneCount >= wordList.length) return { ok: false, reason: 'all-words-marked' };
+
+        this.#consumeJustTerminated(time);
+
+        let anchor;
+        if (doneCount > 0) {
+            const prevPrimary = verse.words[doneCount - 1][0];
+            if (prevPrimary.end === null) {
+                prevPrimary.end = time - GAP;
+            }
+            anchor = prevPrimary.end;
+        } else {
+            anchor = verse.start;
+        }
+
+        verse.words.push([{ start: anchor, end: anchor }]);
+
+        const isLastWord = doneCount === wordList.length - 1;
+        if (isLastWord) {
+            // Le mot sauté était le dernier : la fin du verset (jusque-là
+            // une approximation ou une vraie fin de mot devenue obsolète)
+            // se recale sur ce même instant plutôt que de laisser une
+            // durée fictive après le dernier vrai mot.
+            verse.end = anchor;
+        }
+
+        this.#wordViewIndex = verse.words.length;
+        return { ok: true, allWordsMarked: isLastWord, skippedAt: anchor };
+    }
+
     // Recale le début d'un mot déjà marqué sans devoir tout annuler après
     // lui. Redéfinir le début du mot N déplace aussi la fin du mot N-1
     // (à GAP près, plutôt que sur le même instant exact).
@@ -578,6 +626,7 @@ export class WordMarkingSession {
                 arabic: wordList[i],
                 start: primary.start,
                 end: primary.end,
+                isSkipped: primary.start === primary.end,
                 extraCount: occurrences.length - 1,
             };
         });
