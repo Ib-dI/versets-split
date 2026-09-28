@@ -257,6 +257,13 @@ export class WordMarkingSession {
         // de collision, pas une exception — un simple < le ratait.
         if (lastWordPrimary.end !== null && startTime <= lastWordPrimary.end) {
             const shrunkTo = startTime - GAP;
+            // Garde-fou : ne jamais resserrer sous le début du dernier mot
+            // lui-même — sans ça, une occurrence ajoutée sur un mot bien
+            // antérieur (donc sans rapport avec la vraie fin du dernier
+            // mot) pouvait produire une durée inversée sur ce dernier mot,
+            // silencieusement, à des dizaines de mots de distance de
+            // l'endroit où on cliquait réellement.
+            if (shrunkTo <= lastWordPrimary.start) return null;
             lastWordPrimary.end = shrunkTo;
             return { wordIndex: lastIndex, shrunkTo };
         }
@@ -626,7 +633,12 @@ export class WordMarkingSession {
                 arabic: wordList[i],
                 start: primary.start,
                 end: primary.end,
-                isSkipped: primary.start === primary.end,
+                // Non prononcé seulement si AUCUNE occurrence n'a de durée
+                // réelle — sinon le cheikh s'est repris et l'a bien dit,
+                // même si l'occurrence 0 (la primaire, sautée) reste à
+                // largeur nulle. Ne regarder que primary aurait affiché
+                // "non prononcé" sur un mot pourtant bien dit plus loin.
+                isSkipped: occurrences.every((o) => o.start === o.end),
                 extraCount: occurrences.length - 1,
             };
         });

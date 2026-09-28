@@ -160,6 +160,21 @@ test('describe() marque isSkipped sur un mot sauté, pas sur un mot normal', () 
     assert.equal(words[1].isSkipped, true);
 });
 
+test('describe() ne marque plus isSkipped une fois qu\'une occurrence réelle est ajoutée au mot sauté (bug corrigé : le cheikh s\'était repris mais ce n\'était pas pris en compte)', () => {
+    const { session } = openVerse();
+    session.markWord(1); // mot 0 ouvert
+    session.setViewIndex(0);
+    session.terminateWord(2); // mot 0 fermé
+    session.skipWord(10); // mot 1 sauté (ancré sur 2)
+
+    session.setViewIndex(1);
+    session.toggleExtraOccurrence(20); // le cheikh s'est repris : occurrence réelle sur le mot 1
+
+    const words = session.describe().markedWords;
+    assert.equal(words[1].isSkipped, false); // n'est plus "non prononcé"
+    assert.equal(words[1].extraCount, 1);
+});
+
 test('correctWord recale le début et déplace la fin du mot précédent', () => {
     const { session, verses } = openVerse();
     session.markWord(1);
@@ -592,6 +607,19 @@ test('shrinkLastWordEndIfNeeded resserre aussi quand la nouvelle occurrence dém
     assert.equal(r.ok, true);
     assert.deepEqual(r.shrunk, { wordIndex: 2, shrunkTo: 29.99 });
     assert.equal(verses[0].words[2][0].end, 29.99);
+});
+
+test('shrinkLastWordEndIfNeeded refuse de resserrer sous le début du dernier mot (bug corrigé : durée inversée)', () => {
+    const { session, verses } = openVerse(); // verse.end = 30
+    session.markWord(1);
+    session.markWord(2);
+    session.markWord(15); // dernier mot : { start: 15, end: 30 } (approximation)
+
+    session.setViewIndex(0);
+    const r = session.toggleExtraOccurrence(10); // avant même le début du dernier mot
+    assert.equal(r.ok, true);
+    assert.equal(r.shrunk, null);
+    assert.deepEqual(verses[0].words[2][0], { start: 15, end: 30 }); // inchangé, pas inversé
 });
 
 test('toggleExtraOccurrence sur un autre mot ferme l\'occurrence précédente à GAP près', () => {
