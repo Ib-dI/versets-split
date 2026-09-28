@@ -1291,18 +1291,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const bdi = document.createElement('bdi');
             bdi.textContent = w.arabic;
             row.appendChild(bdi);
+            // Un mot d'abord sauté puis réellement dit plus loin affiche le
+            // timing de cette occurrence réelle, pas celui (fictif) du
+            // saut — l'édition doit alors viser cette même occurrence
+            // (setExtraOccurrenceTime), pas la principale sautée qu'on ne
+            // voit pas (setWordTime la modifierait sans rien changer à
+            // l'écran).
+            const commitDisplayedTime = w.displayExtraIndex === null
+                ? (field, time) => commitWordTime(w.index, field, time)
+                : (field, time) => commitExtraOccurrenceTime(w.index, w.displayExtraIndex, field, time);
             row.appendChild(document.createTextNode(' — '));
             row.appendChild(createEditableTimeSpan({
                 value: w.start,
                 title: 'Cliquer pour modifier le début de ce mot',
-                onCommit: (time) => commitWordTime(w.index, 'start', time),
+                onCommit: (time) => commitDisplayedTime('start', time),
                 onCancel: () => renderWordMode(),
             }));
             row.appendChild(document.createTextNode(' → '));
             row.appendChild(createEditableTimeSpan({
                 value: w.end,
                 title: 'Cliquer pour modifier la fin de ce mot',
-                onCommit: (time) => commitWordTime(w.index, 'end', time),
+                onCommit: (time) => commitDisplayedTime('end', time),
                 onCancel: () => renderWordMode(),
             }));
             if (w.isSkipped) {

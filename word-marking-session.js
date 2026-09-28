@@ -627,19 +627,40 @@ export class WordMarkingSession {
 
         const markedWords = verse.words.map((occurrences, i) => {
             const primary = occurrences[0];
+            const isSkipped = occurrences.every((o) => o.start === o.end);
+            // Si l'occurrence 0 (la principale) est un saut mais qu'une
+            // occurrence réelle existe plus loin, c'est ELLE qu'on affiche
+            // en tête de ligne (start/end) — sinon la ligne continue de
+            // montrer l'instant fictif du saut (ex. 0.00 → 0.00) alors que
+            // le mot est bien prononcé, cachant le vrai timing derrière un
+            // clic pour dérouler les occurrences.
+            const displayIndex =
+                primary.start === primary.end
+                    ? occurrences.findIndex((o) => o.start !== o.end)
+                    : -1;
+            const displayOccurrence = displayIndex === -1 ? primary : occurrences[displayIndex];
             return {
                 index: i,
                 isActive: i === viewIndex,
                 arabic: wordList[i],
-                start: primary.start,
-                end: primary.end,
-                // Non prononcé seulement si AUCUNE occurrence n'a de durée
-                // réelle — sinon le cheikh s'est repris et l'a bien dit,
-                // même si l'occurrence 0 (la primaire, sautée) reste à
-                // largeur nulle. Ne regarder que primary aurait affiché
-                // "non prononcé" sur un mot pourtant bien dit plus loin.
-                isSkipped: occurrences.every((o) => o.start === o.end),
-                extraCount: occurrences.length - 1,
+                start: displayOccurrence.start,
+                end: displayOccurrence.end,
+                // -1 (ou 0, équivalents pour l'appelant) : la principale ;
+                // sinon l'index de l'occurrence supplémentaire réellement
+                // affichée — pour que l'édition depuis cette ligne
+                // (setWordTime vs setExtraOccurrenceTime côté script.js)
+                // touche la valeur qu'on voit, pas l'occurrence 0 sautée
+                // cachée derrière.
+                displayExtraIndex: displayIndex > 0 ? displayIndex - 1 : null,
+                isSkipped,
+                // Occurrences au-delà de celle affichée en tête de ligne —
+                // le saut fantôme (occurrence 0 quand displayIndex > 0)
+                // n'en fait pas partie : ce n'est pas une vraie occurrence
+                // aux yeux de l'utilisateur, juste l'absence de la
+                // principale qu'on vient de remplacer à l'affichage.
+                extraCount: displayIndex > 0
+                    ? occurrences.length - 2
+                    : occurrences.length - 1,
             };
         });
 

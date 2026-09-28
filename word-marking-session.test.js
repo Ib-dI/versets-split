@@ -165,14 +165,21 @@ test('describe() ne marque plus isSkipped une fois qu\'une occurrence réelle es
     session.markWord(1); // mot 0 ouvert
     session.setViewIndex(0);
     session.terminateWord(2); // mot 0 fermé
-    session.skipWord(10); // mot 1 sauté (ancré sur 2)
+    session.skipWord(10); // mot 1 sauté (ancré sur 2, durée nulle)
 
     session.setViewIndex(1);
     session.toggleExtraOccurrence(20); // le cheikh s'est repris : occurrence réelle sur le mot 1
+    session.toggleExtraOccurrence(25); // la referme
 
     const words = session.describe().markedWords;
     assert.equal(words[1].isSkipped, false); // n'est plus "non prononcé"
-    assert.equal(words[1].extraCount, 1);
+    // La ligne affiche le vrai timing de l'occurrence, pas celui (fictif)
+    // du saut (2-2) — sinon le mot a l'air toujours non prononcé au
+    // premier coup d'œil malgré isSkipped=false (bug corrigé).
+    assert.equal(words[1].start, 20);
+    assert.equal(words[1].end, 25);
+    assert.equal(words[1].displayExtraIndex, 0); // édition doit viser cette occurrence, pas la principale sautée
+    assert.equal(words[1].extraCount, 0); // le saut fantôme ne compte pas comme occurrence
 });
 
 test('correctWord recale le début et déplace la fin du mot précédent', () => {
