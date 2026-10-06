@@ -1260,13 +1260,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Seul le mot le plus récemment marqué peut avoir sa principale
             // encore ouverte — tant que ce n'est pas fermé, ajouter une
-            // occurrence supplémentaire ici n'a pas de sens. On propose donc
-            // de la fermer directement au lieu d'afficher la section
-            // occurrences.
+            // occurrence supplémentaire ici n'a pas de sens : on propose de
+            // la fermer directement. Les occurrences déjà posées restent
+            // affichées et ajustables (voir extra.canToggle).
             terminateWordBtn.style.display = snap.primary.open ? '' : 'none';
             terminateWordBtn.disabled = snap.wordMarkingLocked;
-            extraOccurrencesSection.style.display = snap.primary.open ? 'none' : '';
-            if (!snap.primary.open) renderExtraOccurrences(snap.extra, snap.viewIndex);
+            extraOccurrencesSection.style.display = '';
+            renderExtraOccurrences(snap.extra, snap.viewIndex);
         }
 
         // Chaque ligne est cliquable (pas seulement le numéro visuellement,
@@ -1358,7 +1358,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // les événements DOM.
     function renderExtraOccurrences(extra, wordIndex) {
         toggleExtraOccurrenceBtn.textContent = extra.toggleLabel;
-        toggleExtraOccurrenceBtn.disabled = wordSession.isWordMarkingLocked();
+        toggleExtraOccurrenceBtn.disabled = wordSession.isWordMarkingLocked() || !extra.canToggle;
 
         // "Mot suivant" : ferme l'occurrence en cours ET avance directement
         // au mot suivant en un seul clic, pour enchaîner une phrase répétée

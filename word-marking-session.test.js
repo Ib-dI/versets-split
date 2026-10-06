@@ -300,6 +300,74 @@ test('undoWord retire le dernier mot et rouvre le précédent', () => {
     assert.equal(verses[0].words[0][0].end, null); // rouvert
 });
 
+test('undoWord ne rouvre pas une fin posée à la main avant une occurrence', () => {
+    // Scénario réel : mot 0 marqué puis terminé à la main, occurrence
+    // supplémentaire ajoutée et terminée, puis mot 1 marqué par erreur et
+    // annulé — la fin du mot 0 doit rester intacte.
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.setViewIndex(0);
+    session.terminateWord(5);
+    session.toggleExtraOccurrence(8);
+    session.toggleExtraOccurrence(10);
+    session.markWord(12); // erreur
+
+    const r = session.undoWord();
+    assert.equal(r.ok, true);
+    assert.equal(verses[0].words.length, 1);
+    assert.equal(verses[0].words[0][0].end, 5);
+    assert.deepEqual(verses[0].words[0][1], { start: 8, end: 10 });
+});
+
+test('undoWord annule aussi le resserrement de GAP fait par le marquage annulé', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.setViewIndex(0);
+    session.terminateWord(5);
+    session.markWord(5); // même instant : la fin du mot 0 passe à 5 - GAP
+    assert.ok(verses[0].words[0][0].end < 5);
+
+    session.undoWord();
+    assert.equal(verses[0].words[0][0].end, 5);
+});
+
+test('undoWord d\'un mot sauté en dernier restaure verse.end', () => {
+    const { session, verses } = openVerse();
+    session.markWord(1);
+    session.markWord(2);
+    session.skipWord(4); // dernier mot : verse.end recalé
+    assert.notEqual(verses[0].end, 30);
+
+    session.undoWord();
+    assert.equal(verses[0].end, 30);
+    assert.equal(verses[0].words[1][0].end, null);
+});
+
+test('undoWord sans journal (session restaurée) ne rouvre pas un mot qui a des occurrences', () => {
+    const verses = [{
+        id: 1, start: 0, end: 30,
+        words: [[{ start: 1, end: 5 }, { start: 8, end: 10 }], [{ start: 12, end: null }]],
+    }];
+    const session = makeSession(verses);
+    session.open(0);
+    session.undoWord();
+    assert.equal(verses[0].words[0][0].end, 5);
+});
+
+test('describe garde les occurrences ajustables quand la principale est ouverte', () => {
+    const verses = [{
+        id: 1, start: 0, end: 30,
+        words: [[{ start: 1, end: null }, { start: 8, end: 10 }]],
+    }];
+    const session = makeSession(verses);
+    session.open(0);
+    session.setViewIndex(0);
+    const snap = session.describe();
+    assert.equal(snap.primary.open, true);
+    assert.equal(snap.extra.canToggle, false);
+    assert.deepEqual(snap.extra.items, [{ start: 8, end: 10 }]);
+});
+
 test('undoWord signale quand il n\'y a rien à annuler', () => {
     const { session } = openVerse();
     const r = session.undoWord();

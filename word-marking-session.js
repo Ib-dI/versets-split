@@ -62,6 +62,16 @@ export class WordMarkingSession {
     // plus rien.
     #justTerminated = null;
 
+    // Pour chaque mot poussé par markWord()/skipWord() (clé : son tableau
+    // d'occurrences), les modifications que ce même appel a faites ailleurs
+    // — fin du mot précédent refermée, fin resserrée de GAP, verse.end
+    // recalé. undoWord() les restaure telles quelles au lieu de rouvrir
+    // aveuglément la fin du mot précédent : celle-ci a pu être posée à la
+    // main ("Terminer ce mot") avant d'y ajouter des occurrences, et la
+    // rouvrir effaçait cette fin et masquait ses occurrences. WeakMap : rien
+    // n'est ajouté aux données exportées.
+    #undoLog = new WeakMap();
+
     constructor({ verses, wordList }) {
         this.#collaborator = verses;
         this.#wordListProvider = wordList;
@@ -236,10 +246,11 @@ export class WordMarkingSession {
     // la lecture — les deux clics décrivent la même frontière, à resserrer
     // de GAP comme n'importe quel autre chaînage. Toujours appelé, même
     // quand rien à faire, pour ne jamais laisser une référence périmée.
-    #consumeJustTerminated(time) {
+    #consumeJustTerminated(time, changes = null) {
         const pending = this.#justTerminated;
         this.#justTerminated = null;
         if (pending && pending.time === time && pending.primary.end === time) {
+            changes?.push({ target: pending.primary, field: 'end', old: pending.primary.end });
             pending.primary.end = time - GAP;
         }
     }
@@ -283,7 +294,8 @@ export class WordMarkingSession {
         // qui vient de le refermer) a été fermé pile sur ce même instant,
         // resserre cette fin de GAP au lieu de laisser deux frontières
         // accolées à zéro écart.
-        this.#consumeJustTerminated(time);
+        const changes = [];
+        this.#consumeJustTerminated(time, changes);
 
         // Le clic marque le début du mot en cours. Si un mot précédent est
         // encore ouvert (pas de end), ce même instant en marque la fin —
@@ -297,17 +309,16 @@ export class WordMarkingSession {
         if (doneCount > 0) {
             const prevPrimary = verse.words[doneCount - 1][0];
             if (prevPrimary.end === null) {
+                changes.push({ target: prevPrimary, field: 'end', old: null });
                 prevPrimary.end = time - GAP;
             }
         }
 
         const isLastWord = doneCount === wordList.length - 1;
-        if (isLastWord) {
-            // Dernier mot : sa fin est déjà connue, c'est la fin du verset.
-            verse.words.push([{ start: time, end: verse.end }]);
-        } else {
-            verse.words.push([{ start: time, end: null }]);
-        }
+        // Dernier mot : sa fin est déjà connue, c'est la fin du verset.
+        const pushed = [{ start: time, end: isLastWord ? verse.end : null }];
+        verse.words.push(pushed);
+        this.#undoLog.set(pushed, changes);
 
         this.#wordViewIndex = verse.words.length;
         return { ok: true, allWordsMarked: isLastWord };
@@ -333,12 +344,14 @@ export class WordMarkingSession {
         const doneCount = verse.words.length;
         if (doneCount >= wordList.length) return { ok: false, reason: 'all-words-marked' };
 
-        this.#consumeJustTerminated(time);
+        const changes = [];
+        this.#consumeJustTerminated(time, changes);
 
         let anchor;
         if (doneCount > 0) {
             const prevPrimary = verse.words[doneCount - 1][0];
             if (prevPrimary.end === null) {
+                changes.push({ target: prevPrimary, field: 'end', old: null });
                 prevPrimary.end = time - GAP;
             }
             anchor = prevPrimary.end;
@@ -346,10 +359,13 @@ export class WordMarkingSession {
             anchor = verse.start;
         }
 
-        verse.words.push([{ start: anchor, end: anchor }]);
+        const pushed = [{ start: anchor, end: anchor }];
+        verse.words.push(pushed);
+        this.#undoLog.set(pushed, changes);
 
         const isLastWord = doneCount === wordList.length - 1;
         if (isLastWord) {
+            changes.push({ target: verse, field: 'end', old: verse.end });
             // Le mot sauté était le dernier : la fin du verset (jusque-là
             // une approximation ou une vraie fin de mot devenue obsolète)
             // se recale sur ce même instant plutôt que de laisser une
@@ -454,9 +470,27 @@ export class WordMarkingSession {
         if (verse.words.length === 0) return { ok: false, reason: 'nothing-to-undo' };
 
         this.#justTerminated = null;
-        verse.words.pop();
-        if (verse.words.length > 0) {
-            verse.words[verse.words.length - 1][0].end = null;
+        const popped = verse.words.pop();
+        // Une occurrence supplémentaire encore ouverte sur le mot retiré
+        // disparaît avec lui.
+        if (this.#activeExtraWordIndex === verse.words.length) {
+            this.#activeExtraWordIndex = null;
+        }
+        const changes = this.#undoLog.get(popped);
+        if (changes) {
+            // Restaure exactement ce que le marquage annulé avait modifié,
+            // dans l'ordre inverse — et rien d'autre.
+            for (let i = changes.length - 1; i >= 0; i--) {
+                const { target, field, old } = changes[i];
+                target[field] = old;
+            }
+        } else if (verse.words.length > 0) {
+            // Mot marqué dans une session précédente (pas de journal) :
+            // repli sur l'ancien comportement, sauf si le mot précédent a
+            // déjà des occurrences supplémentaires — sa fin a alors forcément
+            // été posée à la main, la rouvrir la perdrait.
+            const prev = verse.words[verse.words.length - 1];
+            if (prev.length === 1) prev[0].end = null;
         }
         this.#wordViewIndex = verse.words.length;
         return { ok: true };
@@ -670,19 +704,24 @@ export class WordMarkingSession {
             const occurrences = verse.words[viewIndex];
             const p = occurrences[0];
             primary = { start: p.start, end: p.end, open: p.end === null };
-            if (!primary.open) {
+            // Toujours construit, même principale ouverte : les occurrences
+            // déjà posées doivent rester ajustables/supprimables. Seuls
+            // l'ajout et l'enchaînement sont refusés tant que la principale
+            // est ouverte (canToggle).
+            {
                 const extras = occurrences.slice(1);
                 const activeHere = this.#activeExtraWordIndex === viewIndex;
                 const activeElsewhere =
                     this.#activeExtraWordIndex !== null && this.#activeExtraWordIndex !== viewIndex;
                 extra = {
+                    canToggle: !primary.open,
                     toggleLabel:
                         this.#activeExtraWordIndex === null
                             ? '+ Ajouter une occurrence ici'
                             : activeHere
                               ? 'Terminer cette occurrence ici'
                               : 'Continuer ici (ferme le mot précédent)',
-                    canAdvance: activeHere && viewIndex + 1 < total,
+                    canAdvance: !primary.open && activeHere && viewIndex + 1 < total,
                     activeWarning: activeElsewhere
                         ? {
                               wordIndex: this.#activeExtraWordIndex,
