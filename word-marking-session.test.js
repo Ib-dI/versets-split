@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WordMarkingSession, createArrayVerseCollaborator } from './word-marking-session.js';
+import { VerseTimeline } from './verse-timeline.js';
 
 // Verset à 3 mots pour la plupart des scénarios.
 const WORDS = { 1: ['أ', 'ب', 'ج'], 2: ['د', 'ه', 'و'] };
@@ -782,4 +783,122 @@ test('findFirstIncompleteVerseIndex n\'ouvre pas la session', () => {
     const session = makeSession([{ id: 1, start: 0, end: 10, words: [] }]);
     session.findFirstIncompleteVerseIndex();
     assert.equal(session.isOpen(), false);
+});
+
+// --- Instantanés pour Cmd+Z ---
+
+function sessionOnTimeline(verses) {
+    const timeline = new VerseTimeline();
+    timeline.replaceAll(verses);
+    return { timeline, session: new WordMarkingSession({ verses: timeline, wordList }) };
+}
+
+test('restoreState rouvre le panneau sur le même verset et le même mot', () => {
+    const { session, timeline } = sessionOnTimeline([
+        { id: 1, start: 0, end: 30, words: [[{ start: 0, end: 5 }], [{ start: 5, end: 8 }]] },
+        { id: 2, start: 30, end: 60, words: [] },
+    ]);
+    session.open(0);
+    session.prev();
+    const state = session.captureState();
+    session.requestClose();
+    session.open(1);
+
+    session.restoreState(state);
+
+    assert.equal(session.isOpen(), true);
+    assert.equal(session.getCurrentIndex(), 0);
+    assert.equal(session.describe().viewIndex, 1);
+    assert.equal(timeline.getVerseCount(), 2);
+});
+
+test('restoreState ferme le panneau s\'il était fermé, sans demander de confirmation', () => {
+    const { session } = sessionOnTimeline([
+        { id: 1, start: 0, end: 30, words: [[{ start: 0, end: 5 }]] },
+    ]);
+    const state = session.captureState();
+    session.open(0);
+    session.setViewIndex(0);
+    session.toggleExtraOccurrence(10);
+    session.restoreState(state);
+    assert.equal(session.isOpen(), false);
+});
+
+test('restoreState retrouve l\'occurrence supplémentaire ouverte', () => {
+    const { session, timeline } = sessionOnTimeline([
+        { id: 1, start: 0, end: 30, words: [[{ start: 0, end: 5 }], [{ start: 5, end: 8 }]] },
+    ]);
+    const before = () => ({ data: timeline.captureState(), panel: session.captureState() });
+    session.open(0);
+    session.setViewIndex(0);
+    session.toggleExtraOccurrence(10);
+    const opened = before();
+    session.toggleExtraOccurrence(12);
+
+    timeline.restoreState(opened.data);
+    session.restoreState(opened.panel);
+
+    assert.equal(timeline.getVerse(0).words[0][1].end, null);
+    assert.equal(session.describe().extra.toggleLabel, 'Terminer cette occurrence ici');
+});
+
+test('le verrou de marquage ne fait pas partie de ce qui est restauré', () => {
+    const { session } = sessionOnTimeline([{ id: 1, start: 0, end: 30, words: [] }]);
+    const state = session.captureState();
+    session.setWordMarkingLocked(true);
+    session.restoreState(state);
+    assert.equal(session.isWordMarkingLocked(), true);
+});
+
+test('S reste exact après un Cmd+Z puis un rétablissement : la fin posée à la main survit', () => {
+    const { session, timeline } = sessionOnTimeline([{ id: 1, start: 0, end: 30, words: [] }]);
+    session.open(0);
+    session.markWord(1);
+    session.setViewIndex(0);
+    session.terminateWord(2);
+    const beforeMark = { data: timeline.captureState(), panel: session.captureState() };
+    session.markWord(5);
+    const afterMark = { data: timeline.captureState(), panel: session.captureState() };
+
+    timeline.restoreState(beforeMark.data);
+    session.restoreState(beforeMark.panel);
+    timeline.restoreState(afterMark.data);
+    session.restoreState(afterMark.panel);
+
+    session.undoWord();
+    assert.equal(timeline.getVerse(0).words[0][0].end, 2);
+});
+
+test('Cmd+Z après S redonne le mot retiré, et S fonctionne encore dessus', () => {
+    const { session, timeline } = sessionOnTimeline([{ id: 1, start: 0, end: 30, words: [] }]);
+    session.open(0);
+    session.markWord(1);
+    session.markWord(5);
+    const beforeUndoWord = { data: timeline.captureState(), panel: session.captureState() };
+    session.undoWord();
+    assert.equal(timeline.getVerse(0).words[0][0].end, null);
+
+    timeline.restoreState(beforeUndoWord.data);
+    session.restoreState(beforeUndoWord.panel);
+    assert.equal(timeline.getVerse(0).words.length, 2);
+    assert.equal(timeline.getVerse(0).words[0][0].end, 4.99);
+
+    session.undoWord();
+    assert.equal(timeline.getVerse(0).words[0][0].end, null);
+});
+
+test('la frontière de "Terminer ce mot" reste resserrée après une restauration', () => {
+    const { session, timeline } = sessionOnTimeline([{ id: 1, start: 0, end: 30, words: [] }]);
+    session.open(0);
+    session.markWord(1);
+    session.setViewIndex(0);
+    session.terminateWord(2);
+    const state = { data: timeline.captureState(), panel: session.captureState() };
+    session.markWord(9);
+
+    timeline.restoreState(state.data);
+    session.restoreState(state.panel);
+    session.markWord(2);
+
+    assert.equal(timeline.getVerse(0).words[0][0].end, 1.99);
 });

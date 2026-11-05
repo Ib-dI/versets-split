@@ -223,3 +223,81 @@ test('serializeVerse inclut le champ words quand des mots sont marqués', () => 
         '{ id: 1, startTime: 0.00, endTime: 10.00, words: [[{ startTime: 0.00, endTime: 5.00 }], [{ startTime: 5.00, endTime: 10.00 }, { startTime: 8.00, endTime: 9.00 }]] }',
     );
 });
+
+// --- Instantanés pour Cmd+Z ---
+
+function timelineWithWords() {
+    const vt = new VerseTimeline();
+    vt.replaceAll([
+        { id: 1, start: 0, end: 10, words: [[{ start: 0, end: 4 }, { start: 8, end: 9 }], [{ start: 4, end: 10 }]] },
+        { id: 2, start: 10, end: 20, words: [] },
+    ]);
+    return vt;
+}
+
+test('restoreState annule une suppression qui avait vidé le verset précédent', () => {
+    const vt = timelineWithWords();
+    const before = vt.captureState();
+    vt.deleteVerse(1);
+    vt.restoreState(before);
+    assert.equal(vt.getVerseCount(), 2);
+    assert.equal(vt.getVerse(0).end, 10);
+    assert.deepEqual(vt.getVerse(0).words, [[{ start: 0, end: 4 }, { start: 8, end: 9 }], [{ start: 4, end: 10 }]]);
+});
+
+test('restoreState garde les mêmes objets et le même tableau', () => {
+    const vt = timelineWithWords();
+    const list = vt.getVerses();
+    const verse = vt.getVerse(0);
+    const word = verse.words[0];
+    const occurrence = word[0];
+    const before = vt.captureState();
+    vt.replaceAll();
+    vt.restoreState(before);
+    assert.equal(vt.getVerses(), list);
+    assert.equal(vt.getVerse(0), verse);
+    assert.equal(vt.getVerse(0).words[0], word);
+    assert.equal(vt.getVerse(0).words[0][0], occurrence);
+});
+
+test('restoreState annule les changements de valeur et l\'ordre', () => {
+    const vt = timelineWithWords();
+    const before = vt.captureState();
+    const [first, second] = vt.getVerses();
+    first.words[0][0].start = 99;
+    first.words[0].pop();
+    vt.setBoundary(1, 'start', 12);
+    vt.reorder(second, first);
+    vt.restoreState(before);
+    assert.equal(vt.getVerse(0), first);
+    assert.equal(first.words[0][0].start, 0);
+    assert.equal(first.words[0].length, 2);
+    assert.equal(second.start, 10);
+});
+
+test('un même instantané peut être restauré plusieurs fois', () => {
+    const vt = timelineWithWords();
+    const before = vt.captureState();
+    vt.getVerse(0).words[0].pop();
+    vt.restoreState(before);
+    vt.getVerse(0).words[0].pop();
+    vt.restoreState(before);
+    assert.equal(vt.getVerse(0).words[0].length, 2);
+});
+
+test('sameState distingue un état modifié d\'un état inchangé', () => {
+    const vt = timelineWithWords();
+    const before = vt.captureState();
+    assert.equal(VerseTimeline.sameState(before, vt.captureState()), true);
+
+    vt.getVerse(0).words[1][0].end = 11;
+    assert.equal(VerseTimeline.sameState(before, vt.captureState()), false);
+    vt.restoreState(before);
+
+    vt.reorder(vt.getVerse(1), vt.getVerse(0));
+    assert.equal(VerseTimeline.sameState(before, vt.captureState()), false);
+    vt.restoreState(before);
+
+    vt.startVerse(3, 30);
+    assert.equal(VerseTimeline.sameState(before, vt.captureState()), false);
+});

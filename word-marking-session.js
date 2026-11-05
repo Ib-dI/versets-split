@@ -657,6 +657,29 @@ export class WordMarkingSession {
         return { ok: true, action: 'opened', verseId: verse.id };
     }
 
+    // Position du marquage pour Cmd+Z : à restaurer avec les versets (voir
+    // VerseTimeline.captureState, qui garde les mêmes objets — les références
+    // retenues ici restent donc valables). Le verrou de marquage n'en fait
+    // pas partie : ce n'est pas une action annulable. Pas de garde "occurrence
+    // encore ouverte" : on revient à un état connu, rien n'est abandonné.
+    captureState() {
+        return {
+            verseRef: this.#verseRef,
+            wordViewIndex: this.#wordViewIndex,
+            activeExtraWordIndex: this.#activeExtraWordIndex,
+            pendingVerseOccurrenceRef: this.#pendingVerseOccurrenceRef,
+            justTerminated: this.#justTerminated,
+        };
+    }
+
+    restoreState(state) {
+        this.#verseRef = state.verseRef;
+        this.#wordViewIndex = state.wordViewIndex;
+        this.#activeExtraWordIndex = state.activeExtraWordIndex;
+        this.#pendingVerseOccurrenceRef = state.pendingVerseOccurrenceRef;
+        this.#justTerminated = state.justTerminated;
+    }
+
     // Instantané complet, prêt à peindre : toutes les règles "quoi
     // afficher/activer quand" vivent ici plutôt que dans le code de rendu.
     describe() {

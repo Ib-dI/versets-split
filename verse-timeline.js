@@ -69,6 +69,55 @@ export class VerseTimeline {
         this.#verses.push(...newVerses);
     }
 
+    // Instantané pour Cmd+Z : les valeurs de chaque verset, mot et occurrence,
+    // À CÔTÉ de la référence de l'objet qui les porte. restoreState réécrit
+    // ces valeurs dans les objets d'origine plutôt que d'en créer des copies :
+    // tout ce qui les tient par référence reste valable (verset ouvert dans
+    // le mode mots, cases cochées, journal d'annulation du mot).
+    captureState() {
+        return this.#verses.map((verse) => ({
+            ref: verse,
+            id: verse.id,
+            start: verse.start,
+            end: verse.end,
+            words: verse.words.map((occurrences) => ({
+                ref: occurrences,
+                items: occurrences.map((o) => ({ ref: o, start: o.start, end: o.end })),
+            })),
+        }));
+    }
+
+    restoreState(state) {
+        this.replaceAll(state.map((saved) => {
+            const verse = saved.ref;
+            verse.id = saved.id;
+            verse.start = saved.start;
+            verse.end = saved.end;
+            verse.words = saved.words.map((word) => {
+                word.ref.length = 0;
+                word.items.forEach((item) => {
+                    item.ref.start = item.start;
+                    item.ref.end = item.end;
+                    word.ref.push(item.ref);
+                });
+                return word.ref;
+            });
+            return verse;
+        }));
+    }
+
+    // Vrai si deux instantanés décrivent les mêmes données — une action sans
+    // effet n'a rien à annuler et ne doit pas consommer un Cmd+Z.
+    static sameState(a, b) {
+        const sameOccurrence = (x, y) => x.ref === y.ref && x.start === y.start && x.end === y.end;
+        const sameWord = (x, y) => x.ref === y.ref && x.items.length === y.items.length
+            && x.items.every((item, i) => sameOccurrence(item, y.items[i]));
+        const sameVerse = (x, y) => x.ref === y.ref && x.id === y.id && x.start === y.start && x.end === y.end
+            && x.words.length === y.words.length
+            && x.words.every((word, i) => sameWord(word, y.words[i]));
+        return a.length === b.length && a.every((verse, i) => sameVerse(verse, b[i]));
+    }
+
     startVerse(id, time) {
         const verse = { id, start: time, end: null, words: [] };
         this.#verses.push(verse);
