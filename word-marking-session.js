@@ -216,6 +216,19 @@ export class WordMarkingSession {
         return this.open(prevIndex, { force });
     }
 
+    // Index du premier verset qu'il reste à marquer (données de mots dispo,
+    // déjà borné, mots incomplets), ou -1 — le point d'entrée du raccourci
+    // qui ouvre le mode mots sans passer par la liste. Un mot non prononcé
+    // compte comme traité : il a sa propre entrée dans verse.words.
+    findFirstIncompleteVerseIndex() {
+        for (let i = 0; i < this.#collaborator.getVerseCount(); i++) {
+            const verse = this.#collaborator.getVerse(i);
+            const wordList = this.#wordListProvider(verse.id);
+            if (wordList && verse.end !== null && verse.words.length < wordList.length) return i;
+        }
+        return -1;
+    }
+
     setViewIndex(index) {
         if (!this.isOpen()) return;
         this.#wordViewIndex = index;

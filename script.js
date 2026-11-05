@@ -459,6 +459,79 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target === shortcutsOverlay) closeShortcutsModal();
     });
 
+    // Saisie de la position audio sur le ⏱ du panneau mots : les sauts de
+    // 1/2/5s ne permettent pas d'atteindre un instant précis. L'audio se met
+    // en pause dès l'ouverture et y reste après validation, pour que « f »
+    // marque exactement le temps tapé. Le champ s'insère à côté du ⏱ plutôt
+    // que dedans : updateTimeDisplay() réécrit son textContent à chaque
+    // timeupdate et effacerait un champ qui s'y trouverait.
+    let playheadInput = null;
+
+    function closePlayheadInput() {
+        const input = playheadInput;
+        playheadInput = null;
+        wordModePlayhead.style.display = '';
+        input.remove();
+    }
+
+    function commitPlayheadInput() {
+        // Virgule acceptée : c'est le séparateur naturel au clavier français.
+        const raw = playheadInput.value.trim().replace(',', '.');
+        const time = /^\d+(\.\d*)?$|^\.\d+$/.test(raw) ? parseFloat(raw) : NaN;
+        // Refus sans fermer le champ ni déplacer l'audio : corriger une
+        // faute de frappe ne doit pas obliger à tout retaper.
+        if (Number.isNaN(time) || time > audioPlayer.duration) {
+            showNotification(
+                Number.isNaN(time)
+                    ? 'Temps invalide'
+                    : `Temps au-delà de la fin de l'audio (${audioPlayer.duration.toFixed(2)}s)`,
+            );
+            playheadInput.select();
+            return;
+        }
+        closePlayheadInput();
+        timeSource.seek(time);
+        updateTimeDisplay();
+    }
+
+    function openPlayheadInput() {
+        if (playheadInput) return;
+        if (!timeSource.isReady()) {
+            showNotification('Charge d\'abord un fichier audio');
+            return;
+        }
+        audioPlayer.pause();
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        input.className = 'editable-time-input word-mode-playhead-input';
+        input.value = timeSource.now().toFixed(2);
+        input.setAttribute('aria-label', 'Position audio en secondes');
+        input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                commitPlayheadInput();
+            } else if (ev.key === 'Escape') {
+                ev.preventDefault();
+                closePlayheadInput();
+            }
+        });
+        input.addEventListener('blur', () => {
+            // Changer de fenêtre déclenche aussi blur, mais laisse le champ
+            // actif : seul un clic ailleurs dans la page annule la saisie.
+            if (playheadInput === input && document.activeElement !== input) closePlayheadInput();
+        });
+
+        playheadInput = input;
+        wordModePlayhead.style.display = 'none';
+        wordModePlayhead.after(input);
+        input.focus();
+        input.select();
+    }
+
+    wordModePlayhead.addEventListener('click', openPlayheadInput);
+
     // Raccourcis clavier : espace = lecture/pause, c/v/b = reculer de
     // 5/2/1s, n/,/; = avancer de 1/2/5s. Ignorés si le focus est dans un
     // champ de saisie (numéro de sourate/verset, zone d'export) pour ne
@@ -474,6 +547,10 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        // Cmd/Ctrl restent au navigateur et au système : sans ça, Cmd+C/Cmd+V
+        // reculaient l'audio au lieu de copier/coller, et Cmd+F marquait un mot.
+        if (e.metaKey || e.ctrlKey) return;
+
         const tag = document.activeElement?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
         if (!timeSource.isReady()) return;
@@ -482,6 +559,28 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             togglePlayPause();
             return;
+        }
+
+        // « m » ouvre le mode mots sur le premier verset restant à marquer,
+        // sans lancer la lecture ; « p » (mode mots ouvert) ouvre la saisie
+        // de la position audio.
+        if (!e.altKey) {
+            const plainKey = e.key.toLowerCase();
+            if (plainKey === 'm') {
+                e.preventDefault();
+                if (wordSession.isOpen()) return;
+                const index = wordSession.findFirstIncompleteVerseIndex();
+                if (index === -1) showNotification('Aucun verset avec des mots à marquer');
+                else tryOpenWordMode(index);
+                return;
+            }
+            if (plainKey === 'p' && wordSession.isOpen()) {
+                // Sans preventDefault, le « p » s'écrirait dans le champ qui
+                // vient de prendre le focus.
+                e.preventDefault();
+                openPlayheadInput();
+                return;
+            }
         }
 
         // Mode mots ouvert : « f » marque le mot en cours (au clavier plutôt

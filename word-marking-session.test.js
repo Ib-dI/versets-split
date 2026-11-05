@@ -749,3 +749,37 @@ test('markWord ne recalcule PAS la fin d\'un mot déjà fermé via terminateWord
     assert.equal(verses[0].words[0][0].end, 5); // préservé, pas écrasé par 15 - GAP
     assert.equal(verses[0].words[1][0].start, 15);
 });
+
+// Trois mots marqués : le verset id 1 ou 2 de WORDS est alors complet.
+function allThreeWords() {
+    return [[{ start: 1, end: 2 }], [{ start: 3, end: 4 }], [{ start: 5, end: 6 }]];
+}
+
+test('findFirstIncompleteVerseIndex ignore les versets complets, sans données de mots ou sans fin', () => {
+    const session = makeSession([
+        { id: 1, start: 0, end: 10, words: allThreeWords() },
+        { id: 99, start: 10, end: 20, words: [] },
+        { id: 2, start: 20, end: null, words: [] },
+        { id: 2, start: 30, end: 40, words: [] },
+    ]);
+    assert.equal(session.findFirstIncompleteVerseIndex(), 3);
+});
+
+test('findFirstIncompleteVerseIndex retient un verset partiellement marqué', () => {
+    const session = makeSession([
+        { id: 1, start: 0, end: 10, words: allThreeWords().slice(0, 2) },
+        { id: 2, start: 10, end: 20, words: [] },
+    ]);
+    assert.equal(session.findFirstIncompleteVerseIndex(), 0);
+});
+
+test('findFirstIncompleteVerseIndex renvoie -1 quand il ne reste rien à marquer', () => {
+    const session = makeSession([{ id: 1, start: 0, end: 10, words: allThreeWords() }]);
+    assert.equal(session.findFirstIncompleteVerseIndex(), -1);
+});
+
+test('findFirstIncompleteVerseIndex n\'ouvre pas la session', () => {
+    const session = makeSession([{ id: 1, start: 0, end: 10, words: [] }]);
+    session.findFirstIncompleteVerseIndex();
+    assert.equal(session.isOpen(), false);
+});

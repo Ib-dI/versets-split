@@ -1013,10 +1013,18 @@ textarea:focus {
   background: rgba(67, 97, 238, 0.1);
   padding: 4px 10px;
   border-radius: var(--border-radius-sm);
+  cursor: pointer;
 }
 
 .dark-mode .word-mode-playhead {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.word-mode-playhead-input {
+  width: 96px;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 3px 8px;
 }
 
 .quran-font-select-label {
